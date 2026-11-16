@@ -1,0 +1,33 @@
+# Логи и результаты проверок
+*.log
+proxy/connection-test.txt
+proxy/self-test.txt
+proxy/ui-test.txt
+proxy/gui-startup-err.txt
+utils/test results/
+
+# Состояние конкретной машины
+gui-settings.json
+proxy/gui-settings.json
+proxy/zapret-strategy.txt
+proxy/*.disabled
+proxy/zapret.autostart
+ipset_switched.flag
+utils/*.enabled
+
+# Генерируемые списки
+lists/ipset-all.txt
+lists/ipset-all.txt.backup
+lists/*-user.txt
+
+# Данные установки
+proxy/install-info.json
+proxy/setup.log
+
+# Сборка и мусор
+proxy/__pycache__/
+*.pyc
+*-test.exe
+*.lnk
+Thumbs.db
+desktop.ini
