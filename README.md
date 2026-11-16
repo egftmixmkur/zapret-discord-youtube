@@ -11,6 +11,8 @@
 Телефон / ТВ / ноутбук ──► HTTP :8080, SOCKS5 :1080 ┘
 ```
 
+**[Скачать установщик (ZapretControlSetup.exe)](https://github.com/egftmixmkur/zapret-discord-youtube/releases/latest)** — Windows 10/11 x64, права администратора.
+
 ## Что внутри
 
 | Путь | Назначение |
