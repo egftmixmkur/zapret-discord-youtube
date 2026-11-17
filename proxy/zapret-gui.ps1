@@ -1160,7 +1160,7 @@ foreach ($nav in $navNames) {
     $navY += 50
 }
 
-[void](New-UILabel -Parent $sidebar -Text 'Версия 1.10.4' -X 18 -Y 520 -W 170 -H 20 `
+[void](New-UILabel -Parent $sidebar -Text 'Версия 1.11.0' -X 18 -Y 520 -W 170 -H 20 `
     -Size 8.5 -Color $script:Theme.Muted)
 [void](New-UILabel -Parent $sidebar -Text 'proxy + utils' -X 18 -Y 540 -W 170 -H 20 `
     -Size 8.5 -Color $script:Theme.Muted)

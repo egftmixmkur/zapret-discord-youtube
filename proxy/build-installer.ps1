@@ -16,7 +16,7 @@ $ErrorActionPreference = 'Stop'
 
 $dir = $PSScriptRoot
 $root = Split-Path -Parent $dir
-$version = '1.10.4'
+$version = '1.11.0'
 $module = Join-Path $dir 'tools\ps2exe\ps2exe.psd1'
 $templatePath = Join-Path $dir 'installer\setup-template.ps1'
 $icon = Join-Path $dir 'zapret.ico'

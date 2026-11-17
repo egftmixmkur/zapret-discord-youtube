@@ -1,4 +1,4 @@
-param(
+﻿param(
     [switch]$TestBuild,
     [string]$OutputName = ''
 )
@@ -53,7 +53,7 @@ $params = @{
     description = 'LAN proxy + zapret DPI bypass control panel'
     product     = 'ZAPRET CONTROL'
     company     = 'zapret-discord-youtube'
-    version     = '1.10.4.0'
+    version     = '1.11.0.0'
 }
 if (Test-Path -LiteralPath $icon) { $params['iconFile'] = $icon }
 if (-not $TestBuild) { $params['requireAdmin'] = $true }
