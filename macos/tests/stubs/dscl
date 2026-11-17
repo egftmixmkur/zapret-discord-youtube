@@ -1,0 +1,7 @@
+#!/bin/bash
+# Заглушка macOS-команды для эмуляции: dscl
+if [ "${2:-}" = "-read" ]; then
+    echo "NFSHomeDirectory: ${SIM_HOME:-/tmp}"
+    exit 0
+fi
+exit 1

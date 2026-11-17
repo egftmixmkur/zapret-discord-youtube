@@ -1,0 +1,3 @@
+#!/bin/bash
+# Заглушка macOS-команды для эмуляции: stat -f '%Su' /dev/console
+echo "${SIM_USER:-sdccd}"

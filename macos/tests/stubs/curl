@@ -1,0 +1,8 @@
+#!/bin/bash
+# Заглушка curl: пишет вызов в лог и отвечает как рабочий прокси.
+echo "curl $*" >>"${SIM_LOG:-/dev/null}"
+case "$*" in
+    *youtube*) printf '204' ;;
+    *example.com*) printf '200' ;;
+    *) printf '000' ;;
+esac

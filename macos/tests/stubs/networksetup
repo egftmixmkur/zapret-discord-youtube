@@ -1,0 +1,40 @@
+#!/bin/bash
+# Заглушка macOS-команды для эмуляции: networksetup
+log="${SIM_LOG:-/dev/null}"
+state="${SIM_STATE:-/dev/null}"
+echo "networksetup $*" >>"$log"
+
+cmd="${1:-}"
+[ $# -gt 0 ] && shift
+
+case "$cmd" in
+    -listallnetworkservices)
+        echo "An asterisk (*) denotes that a network service is disabled."
+        echo "Wi-Fi"
+        echo "USB 10/100/1000 LAN"
+        ;;
+    -setwebproxy|-setsecurewebproxy|-setsocksfirewallproxy)
+        printf '%s|%s|%s|%s|on\n' "$cmd" "$1" "$2" "$3" >>"$state"
+        ;;
+    -setproxybypassdomains)
+        printf 'bypass|%s|%s\n' "$1" "${*:2}" >>"$state"
+        ;;
+    -setwebproxystate|-setsecurewebproxystate|-setsocksfirewallproxystate)
+        printf '%s|%s|||%s\n' "$cmd" "$1" "$2" >>"$state"
+        ;;
+    -getwebproxy|-getsecurewebproxy|-getsocksfirewallproxy)
+        setcmd="${cmd/get/set}"
+        line=$(grep -F "$setcmd|$1|" "$state" 2>/dev/null | tail -1)
+        enabled=$(echo "$line" | cut -d'|' -f5)
+        host=$(echo "$line" | cut -d'|' -f3)
+        port=$(echo "$line" | cut -d'|' -f4)
+        if [ "$enabled" = "on" ]; then echo "Enabled: Yes"; else echo "Enabled: No"; fi
+        echo "Server: $host"
+        echo "Port: $port"
+        echo "Authenticated Proxy Enabled: 0"
+        ;;
+    *)
+        echo "networksetup: unknown option $cmd" >&2
+        exit 1
+        ;;
+esac

@@ -1,0 +1,7 @@
+#!/bin/bash
+# Заглушка macOS-команды для эмуляции: uname
+if [ "${1:-}" = "-s" ]; then
+    echo "Darwin"
+else
+    echo "Darwin"
+fi

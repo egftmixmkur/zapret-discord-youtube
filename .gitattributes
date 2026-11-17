@@ -7,6 +7,11 @@
 *.psm1 text eol=crlf
 *.psd1 text eol=crlf
 
+# Unix-скрипты должны оставаться с LF, иначе на macOS ломается shebang
+*.sh text eol=lf
+*.command text eol=lf
+macos/tests/stubs/* text eol=lf
+
 # Бинарники не трогаем
 *.exe binary
 *.dll binary

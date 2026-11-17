@@ -1,0 +1,7 @@
+#!/bin/bash
+# Заглушка macOS-команды для эмуляции: id
+if [ "${1:-}" = "-u" ]; then
+    echo "${SIM_UID:-0}"
+    exit 0
+fi
+echo "uid=${SIM_UID:-0}(sim) gid=0(root) groups=0(root)"

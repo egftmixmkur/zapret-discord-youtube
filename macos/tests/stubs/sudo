@@ -1,0 +1,11 @@
+#!/bin/bash
+# Заглушка sudo: пишет вызов в лог и перезапускает команду с SIM_UID=0.
+if [ -n "${SIM_LOG:-}" ]; then
+    echo "sudo $*" >>"$SIM_LOG"
+fi
+if [ "${1:-}" = "-p" ]; then
+    shift 2
+fi
+export SIM_UID=0
+export SUDO_USER="${SIM_USER:-sdccd}"
+exec bash "$@"

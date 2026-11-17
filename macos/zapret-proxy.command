@@ -31,10 +31,17 @@ need_macos() {
 
 # Под sudo $HOME указывает на /var/root, поэтому берём домашнюю папку
 # настоящего пользователя.
-real_home() {
+real_user() {
     local user="${SUDO_USER:-$(stat -f '%Su' /dev/console 2>/dev/null)}"
     if [ -n "$user" ] && [ "$user" != "root" ]; then
-        local home
+        echo "$user"
+    fi
+}
+
+real_home() {
+    local user home
+    user=$(real_user)
+    if [ -n "$user" ]; then
         home=$(dscl . -read "/Users/$user" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
         [ -n "$home" ] && { echo "$home"; return; }
     fi
@@ -62,7 +69,7 @@ load_conf() {
 }
 
 save_conf() {
-    local dir file
+    local dir file owner
     dir=$(conf_dir)
     file=$(conf_file)
     mkdir -p "$dir" || return 1
@@ -71,7 +78,11 @@ save_conf() {
         echo "HOST=\"$HOST\""
         echo "SERVICE=\"$SERVICE\""
     } >"$file"
-    chown "$(real_home)" "$file" 2>/dev/null || true
+    owner=$(real_user)
+    if [ -n "$owner" ]; then
+        chown "$owner" "$file" 2>/dev/null || true
+        chown "$owner" "$dir" 2>/dev/null || true
+    fi
 }
 
 valid_host() {
@@ -134,7 +145,7 @@ test_proxy() {
 ask_host() {
     local current="${1:-}"
     local answer
-    printf "IP или имя Windows-ПК%s: " "${current:+ [$current]}"
+    printf "IP или имя Windows-ПК%s: " "${current:+ [$current]}" >&2
     read -r answer
     [ -n "$answer" ] || answer="$current"
     valid_host "$answer" || die "некорректный адрес: $answer"
@@ -167,6 +178,7 @@ EOF
 
 # ---------- разбор аргументов ----------
 
+ORIG_ARGS=("$@")
 ACTION=""
 ARG_HOST=""
 ARG_SERVICE=""
@@ -186,16 +198,30 @@ while [ $# -gt 0 ]; do
     shift
 done
 
+# Адрес проверяем до элевации: незачем спрашивать пароль администратора,
+# чтобы потом сообщить об опечатке в IP.
+[ -n "$ARG_HOST" ] && { valid_host "$ARG_HOST" || die "некорректный адрес: $ARG_HOST"; }
+
 # ---------- основной сценарий ----------
 
 need_macos
+
+# networksetup и запись конфигурации требуют root, поэтому поднимаем права
+# до любого действия (кроме --help, который завершается при разборе аргументов).
+if [ "$(id -u)" -ne 0 ]; then
+    exec sudo -p "Пароль администратора: " "$0" ${ORIG_ARGS[@]+"${ORIG_ARGS[@]}"}
+fi
+
 load_conf
 [ -n "$ARG_SERVICE" ] && SERVICE="$ARG_SERVICE"
 
 case "$ACTION" in
     status) show_status "$SERVICE"; exit 0 ;;
     off) unset_proxy "$SERVICE"; exit 0 ;;
-    test) test_proxy "${ARG_HOST:-$HOST}"; exit $? ;;
+    test)
+        TEST_HOST="${ARG_HOST:-$HOST}"
+        [ -n "$TEST_HOST" ] || die "не указан адрес: --test 192.168.1.10"
+        test_proxy "$TEST_HOST"; exit $? ;;
     on)
         HOST="${ARG_HOST:-$HOST}"
         [ -n "$HOST" ] || die "не указан адрес: --on 192.168.1.10"
@@ -205,11 +231,6 @@ case "$ACTION" in
         exit 0
         ;;
 esac
-
-# Интерактивное меню: networksetup требует root, поэтому перезапускаемся под sudo.
-if [ "$(id -u)" -ne 0 ]; then
-    exec sudo -p "Пароль администратора: " "$0" "$@"
-fi
 
 while true; do
     echo
