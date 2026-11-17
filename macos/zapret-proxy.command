@@ -240,7 +240,7 @@ esac
 
 while true; do
     echo
-    echo "=== $APP_NAME — macOS клиент $APP_VERSION (бета) ==="
+    echo "=== $APP_NAME — macOS клиент $APP_VERSION ==="
     if [ -n "$HOST" ]; then
         echo "Windows-ПК: $HOST (HTTP $HTTP_PORT / SOCKS5 $SOCKS_PORT)"
     else
