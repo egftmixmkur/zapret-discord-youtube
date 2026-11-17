@@ -2503,9 +2503,11 @@ if ($UiTest) {
         }
         $dumpTabs = {
             param([string]$prefix)
+            $content.PerformLayout()
             foreach ($key in @('overview', 'proxy', 'zapret', 'tests', 'logs', 'tools')) {
                 Switch-Tab $key
                 $panel = $script:Tabs[$key]
+                $content.PerformLayout()
                 $panel.PerformLayout()
                 Update-ResponsiveLayout
                 [System.Windows.Forms.Application]::DoEvents()

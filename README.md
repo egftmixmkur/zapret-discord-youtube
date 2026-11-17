@@ -24,6 +24,7 @@
 | `proxy\ZapretControl.exe` | собранная панель управления (UAC при запуске) |
 | `proxy\ZapretControlSetup.exe` | установщик «всё в одном» (~2,2 МБ, внутри весь пакет) |
 | `utils\test zapret.ps1` | тесты стратегий и `-AutoApply` для автоподбора |
+| `macos\` | клиент для macOS: направляет Mac через LAN-прокси этого ПК |
 
 ## Быстрый старт
 
@@ -50,6 +51,20 @@ powershell -ExecutionPolicy Bypass -File proxy\build-installer.ps1
 ```
 
 Для сборки используется `ps2exe` из `proxy\tools\ps2exe`.
+
+## macOS
+
+Сам zapret (`winws.exe` + WinDivert) работает только на Windows, поэтому
+полноценной macOS-версии обхода DPI не существует. Для Mac в папке
+[`macos/`](macos/README.md) лежит клиент, который включает системный прокси
+на Mac и направляет трафик через LAN-прокси этого ПК
+(HTTP `:8080`, SOCKS5 `:1080`), где zapret уже обходит блокировки:
+
+```bash
+cd macos
+chmod +x zapret-proxy.command
+./zapret-proxy.command          # меню: указать IP ПК, включить/выключить, проверить
+```
 
 ## Что не хранится в репозитории
 

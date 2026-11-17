@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateSet('standard', 'dpi')]
     [string]$TestType = '',
     [ValidateSet('all', 'select')]
