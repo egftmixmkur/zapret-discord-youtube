@@ -120,6 +120,7 @@ out_has "Прокси включён для «Wi-Fi»" && ok "включил п�
 state_has "setwebproxy|Wi-Fi|192.168.1.99|8080|on" && ok "применил введённый IP" || bad "IP не применился"
 out_has "IP или имя Windows-ПК" && ok "спросил адрес" || bad "не спросил адрес"
 conf_has 'HOST="192.168.1.99"' && ok "сохранил адрес" || bad "не сохранил"
+out_has "0.1.0-beta (бета)" && ok "показывает версию и пометку бета" || bad "нет версии в шапке"
 
 # --- 10. под root sudo не нужен ---
 echo "10) --off под root"
@@ -127,6 +128,14 @@ setup 0
 run --off
 [ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
 if log_has "sudo"; then bad "зачем-то вызвал sudo"; else ok "без sudo"; fi
+
+# --- 11. --version ---
+echo "11) --version"
+setup 501
+run --version
+[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+out_has "0.1.0-beta" && ok "версия клиента 0.1.0-beta" || bad "нет версии"
+[ ! -s "$SIM_LOG" ] && ok "не трогает систему" || bad "вызвал $(head -1 "$SIM_LOG")"
 
 echo
 echo "Итого: $PASS успешно, $FAIL провалов"

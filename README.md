@@ -54,6 +54,8 @@ powershell -ExecutionPolicy Bypass -File proxy\build-installer.ps1
 
 ## macOS
 
+Версии раздельные: Windows-панель — `1.11.0`, macOS-клиент — `0.1.0-beta (бета)`.
+
 Сам zapret (`winws.exe` + WinDivert) работает только на Windows, поэтому
 полноценной macOS-версии обхода DPI не существует. Для Mac в папке
 [`macos/`](macos/README.md) лежит клиент, который включает системный прокси
@@ -64,6 +66,7 @@ powershell -ExecutionPolicy Bypass -File proxy\build-installer.ps1
 cd macos
 chmod +x zapret-proxy.command
 ./zapret-proxy.command          # меню: указать IP ПК, включить/выключить, проверить
+./zapret-proxy.command --version
 ```
 
 ## Что не хранится в репозитории

@@ -1,4 +1,8 @@
-# macOS-клиент ZAPRET CONTROL
+# macOS-клиент ZAPRET CONTROL 0.1.0-beta
+
+**Версия клиента: 0.1.0-beta (бета).** Версии Windows-панели и macOS-клиента
+нумеруются раздельно: сейчас Windows — `1.11.0`, macOS — `0.1.0-beta`.
+Проверить версию клиента: `./zapret-proxy.command --version`.
 
 ## Важно: полной версии zapret для macOS не существует
 
@@ -55,6 +59,7 @@ chmod +x zapret-proxy.command
 ./zapret-proxy.command --status                   # статус
 ./zapret-proxy.command --test                     # проверить связь
 ./zapret-proxy.command --off                      # выключить
+./zapret-proxy.command --version                  # версия клиента
 ```
 
 ## Вручную (без скрипта)
@@ -89,11 +94,11 @@ chmod +x zapret-proxy.command
 
 ```bash
 cd macos/tests
-./run-tests.sh          # 10 сценариев, 38 проверок
+./run-tests.sh          # 11 сценариев, 42 проверки
 ```
 
-Проверяются справка, включение через `--on` (с элевацией и без), статус,
-`--test` с адресом и из конфига, другое сетевое подключение и hostname,
-выключение, отказ при мусорном адресе, меню и работа под root.
+Проверяются справка, версия (`--version`), включение через `--on` (с элевацией
+и без), статус, `--test` с адресом и из конфига, другое сетевое подключение
+и hostname, выключение, отказ при мусорном адресе, меню и работа под root.
 Реальный `networksetup` и системный прокси проверяются только на Mac.
 

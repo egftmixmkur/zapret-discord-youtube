@@ -12,9 +12,11 @@
 #   ./zapret-proxy.command --status
 #   ./zapret-proxy.command --test 192.168.1.10
 #   ./zapret-proxy.command --service "Wi-Fi"
+#   ./zapret-proxy.command --version
 set -u
 
 APP_NAME="ZAPRET CONTROL"
+APP_VERSION="0.1.0-beta"
 HTTP_PORT=8080
 SOCKS_PORT=1080
 BYPASS_DOMAINS="localhost 127.0.0.1 *.local 192.168.* 10.* 172.16.* 172.17.* 172.18.* 172.19.* 172.2*.* 172.30.* 172.31.*"
@@ -190,7 +192,11 @@ while [ $# -gt 0 ]; do
         --test) ACTION="test"; [ $# -ge 2 ] && { ARG_HOST="$2"; shift; } ;;
         --service) [ $# -ge 2 ] && { ARG_SERVICE="$2"; shift; } ;;
         -h|--help)
-            sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        -V|--version)
+            echo "$APP_NAME macOS client $APP_VERSION"
             exit 0
             ;;
         *) die "неизвестный аргумент: $1 (см. --help)" ;;
@@ -234,7 +240,7 @@ esac
 
 while true; do
     echo
-    echo "=== $APP_NAME — macOS клиент ==="
+    echo "=== $APP_NAME — macOS клиент $APP_VERSION (бета) ==="
     if [ -n "$HOST" ]; then
         echo "Windows-ПК: $HOST (HTTP $HTTP_PORT / SOCKS5 $SOCKS_PORT)"
     else
