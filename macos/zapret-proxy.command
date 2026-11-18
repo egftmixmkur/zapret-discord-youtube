@@ -1,26 +1,35 @@
 #!/bin/bash
-# ZAPRET CONTROL — macOS client.
+# ZAPRET CONTROL — macOS client (beta).
 #
-# Сам zapret (winws + WinDivert) работает только на Windows: на macOS нет ни
-# WinDivert, ни WFP. Этот скрипт настраивает Mac так, чтобы весь его трафик шёл
-# через LAN-прокси на Windows-ПК, где zapret уже обходит DPI.
+# Два режима:
+#   lan   — трафик Mac идёт через LAN-прокси Windows-ПК, где работает zapret.
+#   local — локальный прокси на этом Mac с обходом DPI (split TLS ClientHello),
+#           Windows-ПК не нужен.
 #
 # Использование:
-#   ./zapret-proxy.command                 # интерактивное меню
+#   ./zapret-proxy.command                  # меню
+#   ./zapret-proxy.command --local          # локальный режим (без Windows)
 #   ./zapret-proxy.command --on 192.168.1.10
 #   ./zapret-proxy.command --off
 #   ./zapret-proxy.command --status
-#   ./zapret-proxy.command --test 192.168.1.10
+#   ./zapret-proxy.command --test [IP]
+#   ./zapret-proxy.command --install | --uninstall
+#   ./zapret-proxy.command --autostart on|off
 #   ./zapret-proxy.command --service "Wi-Fi"
 #   ./zapret-proxy.command --version
 set -u
 
 APP_NAME="ZAPRET CONTROL"
-APP_VERSION="0.1.0-beta"
+APP_VERSION="0.2.0-beta"
 HTTP_PORT=8080
 SOCKS_PORT=1080
 BYPASS_DOMAINS="localhost 127.0.0.1 *.local 192.168.* 10.* 172.16.* 172.17.* 172.18.* 172.19.* 172.2*.* 172.30.* 172.31.*"
 DEFAULT_SERVICE="Wi-Fi"
+LOCAL_HOST="127.0.0.1"
+LAUNCHD_LABEL="com.zapretcontrol.proxy"
+
+SELF_DIR=$(cd "$(dirname "$0")" && pwd)
+LIB_FILE="$SELF_DIR/lib/desync-proxy.pl"
 
 # ---------- вспомогательные функции ----------
 
@@ -50,20 +59,38 @@ real_home() {
     echo "$HOME"
 }
 
+real_uid() {
+    local user
+    user=$(real_user)
+    [ -n "$user" ] || return 1
+    id -u "$user" 2>/dev/null
+}
+
 conf_dir() { echo "$(real_home)/Library/Application Support/ZapretControl"; }
 conf_file() { echo "$(conf_dir)/proxy.conf"; }
+app_dir() { echo "$(real_home)/Applications/ZapretControl"; }
+plist_file() { echo "$(real_home)/Library/LaunchAgents/$LAUNCHD_LABEL.plist"; }
+log_file() { echo "$(conf_dir)/proxy.log"; }
+pid_file() { echo "$(conf_dir)/proxy.pid"; }
+installed_lib() { echo "$(app_dir)/lib/desync-proxy.pl"; }
 
 load_conf() {
+    MODE="lan"
     HOST=""
     SERVICE="$DEFAULT_SERVICE"
+    SPLIT=0
+    DELAY=0
     local file key value
     file=$(conf_file)
     [ -f "$file" ] || return 0
     while IFS='=' read -r key value; do
         value=$(printf '%s' "$value" | tr -d '"')
         case "$key" in
+            MODE) [ "$value" = "local" ] && MODE="local" ;;
             HOST) HOST="$value" ;;
             SERVICE) [ -n "$value" ] && SERVICE="$value" ;;
+            SPLIT) case "$value" in ''|*[!0-9]*) ;; *) SPLIT="$value" ;; esac ;;
+            DELAY) case "$value" in ''|*[!0-9]*) ;; *) DELAY="$value" ;; esac ;;
         esac
     done <"$file"
     [ -n "${HOST:-}" ] || HOST=""
@@ -77,8 +104,11 @@ save_conf() {
     mkdir -p "$dir" || return 1
     {
         echo "# ZAPRET CONTROL macOS client"
+        echo "MODE=\"$MODE\""
         echo "HOST=\"$HOST\""
         echo "SERVICE=\"$SERVICE\""
+        echo "SPLIT=\"$SPLIT\""
+        echo "DELAY=\"$DELAY\""
     } >"$file"
     owner=$(real_user)
     if [ -n "$owner" ]; then
@@ -118,6 +148,13 @@ unset_proxy() {
 
 show_status() {
     local service="${1:-$SERVICE}"
+    echo "Режим: $(mode_label)"
+    echo "Локальный прокси: $(daemon_label)"
+    if [ -f "$(plist_file)" ]; then
+        echo "Автозапуск: включён"
+    else
+        echo "Автозапуск: выключен"
+    fi
     echo "Подключение: $service"
     echo "--- HTTP ---"
     networksetup -getwebproxy "$service" 2>/dev/null
@@ -125,6 +162,220 @@ show_status() {
     networksetup -getsecurewebproxy "$service" 2>/dev/null
     echo "--- SOCKS5 ---"
     networksetup -getsocksfirewallproxy "$service" 2>/dev/null
+}
+
+mode_label() {
+    if [ "$MODE" = "local" ]; then
+        echo "локальный (на этом Mac)"
+    elif [ -n "$HOST" ]; then
+        echo "LAN (Windows-ПК $HOST)"
+    else
+        echo "не задан"
+    fi
+}
+
+daemon_pid() {
+    local file pid
+    file=$(pid_file)
+    [ -f "$file" ] || return 1
+    pid=$(head -n 1 "$file" 2>/dev/null | tr -dc '0-9')
+    [ -n "$pid" ] || return 1
+    echo "$pid"
+}
+
+daemon_running() {
+    local pid
+    pid=$(daemon_pid) || return 1
+    kill -0 "$pid" 2>/dev/null
+}
+
+daemon_label() {
+    if daemon_running; then
+        echo "работает (pid $(daemon_pid))"
+    else
+        echo "не запущен"
+    fi
+}
+
+local_lib() {
+    if [ -f "$(installed_lib)" ]; then
+        echo "$(installed_lib)"
+        return 0
+    fi
+    if [ -f "$LIB_FILE" ]; then
+        echo "$LIB_FILE"
+        return 0
+    fi
+    return 1
+}
+
+launchd_load() {
+    local plist uid
+    plist=$(plist_file)
+    [ -f "$plist" ] || return 1
+    launchctl load -w "$plist" >/dev/null 2>&1 && return 0
+    uid=$(real_uid) || uid=$(id -u)
+    launchctl bootstrap "gui/$uid" "$plist" >/dev/null 2>&1
+}
+
+launchd_unload() {
+    local plist uid
+    plist=$(plist_file)
+    [ -f "$plist" ] || return 1
+    uid=$(real_uid) || uid=$(id -u)
+    launchctl bootout "gui/$uid" "$plist" >/dev/null 2>&1 && return 0
+    launchctl unload -w "$plist" >/dev/null 2>&1
+}
+
+write_plist() {
+    local lib owner
+    lib=$(installed_lib)
+    [ -f "$lib" ] || die "сначала установи клиент: $0 --install"
+    mkdir -p "$(dirname "$(plist_file)")" || return 1
+    cat >"$(plist_file)" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$LAUNCHD_LABEL</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/perl</string>
+        <string>$lib</string>
+        <string>--http-port</string>
+        <string>$HTTP_PORT</string>
+        <string>--socks-port</string>
+        <string>$SOCKS_PORT</string>
+        <string>--split</string>
+        <string>$SPLIT</string>
+        <string>--delay</string>
+        <string>$DELAY</string>
+        <string>--log</string>
+        <string>$(log_file)</string>
+        <string>--pid</string>
+        <string>$(pid_file)</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>$(log_file)</string>
+    <key>StandardErrorPath</key>
+    <string>$(log_file)</string>
+</dict>
+</plist>
+EOF
+    owner=$(real_user)
+    [ -n "$owner" ] && chown "$owner" "$(plist_file)" 2>/dev/null || true
+}
+
+start_daemon() {
+    local lib owner i
+    lib=$(local_lib) || die "не найден lib/desync-proxy.pl рядом со скриптом"
+    command -v perl >/dev/null 2>&1 || die "не найден perl (в macOS он входит в систему; если удалён — brew install perl)"
+    if daemon_running; then
+        echo "Локальный прокси уже запущен (pid $(daemon_pid))."
+        return 0
+    fi
+    owner=$(real_user)
+    if [ -f "$(plist_file)" ]; then
+        launchd_load || true
+    else
+        local extra=()
+        [ -n "$owner" ] && extra=(--user "$owner")
+        nohup perl "$lib" --http-port "$HTTP_PORT" --socks-port "$SOCKS_PORT" \
+            --split "$SPLIT" --delay "$DELAY" \
+            ${extra[@]+"${extra[@]}"} \
+            --log "$(log_file)" --pid "$(pid_file)" >/dev/null 2>&1 &
+    fi
+    i=0
+    while [ "$i" -lt 50 ]; do
+        if daemon_running; then
+            echo "Локальный прокси запущен (pid $(daemon_pid))."
+            return 0
+        fi
+        i=$((i + 1))
+        sleep 0.1
+    done
+    echo "Не удалось запустить локальный прокси." >&2
+    if [ -f "$(log_file)" ]; then
+        echo "Последние строки журнала:" >&2
+        tail -n 5 "$(log_file)" >&2
+    fi
+    return 1
+}
+
+stop_daemon() {
+    local pid i
+    if [ -f "$(plist_file)" ]; then
+        launchd_unload || true
+    fi
+    pid=$(daemon_pid) || pid=""
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        kill -TERM "$pid" 2>/dev/null || true
+        i=0
+        while [ "$i" -lt 50 ] && kill -0 "$pid" 2>/dev/null; do
+            i=$((i + 1))
+            sleep 0.1
+        done
+        kill -KILL "$pid" 2>/dev/null || true
+        echo "Локальный прокси остановлен."
+    fi
+    rm -f "$(pid_file)"
+}
+
+enable_autostart() {
+    [ "$MODE" = "local" ] || die "автозапуск доступен в локальном режиме: сначала --local"
+    [ -f "$(installed_lib)" ] || die "сначала установи клиент: $0 --install"
+    write_plist || die "не удалось создать $LAUNCHD_LABEL"
+    launchd_load || true
+    echo "Автозапуск включён: прокси будет стартовать при входе в систему."
+}
+
+disable_autostart() {
+    if [ -f "$(plist_file)" ]; then
+        launchd_unload || true
+        rm -f "$(plist_file)"
+        echo "Автозапуск выключен."
+    else
+        echo "Автозапуск уже выключен."
+    fi
+}
+
+install_client() {
+    local dir src
+    dir=$(app_dir)
+    src="$SELF_DIR"
+    [ -f "$src/$(basename "$0")" ] || src="$PWD"
+    mkdir -p "$dir/lib" || die "не удалось создать $dir"
+    cp "$src/$(basename "$0")" "$dir/zapret-proxy.command" || die "не удалось скопировать клиент"
+    cp "$src/lib/desync-proxy.pl" "$dir/lib/desync-proxy.pl" || die "не удалось скопировать прокси"
+    [ -f "$src/README.md" ] && cp "$src/README.md" "$dir/README.md" 2>/dev/null || true
+    chmod +x "$dir/zapret-proxy.command" "$dir/lib/desync-proxy.pl" 2>/dev/null || true
+    echo "Установлено в $dir"
+    echo "Запуск: $dir/zapret-proxy.command"
+}
+
+uninstall_client() {
+    local dir plist
+    dir=$(app_dir)
+    plist=$(plist_file)
+    stop_daemon
+    if [ -f "$plist" ]; then
+        launchd_unload || true
+        rm -f "$plist"
+    fi
+    case "$dir" in
+        */Applications/ZapretControl)
+            rm -rf "$dir"
+            echo "Удалено: $dir"
+            ;;
+        *)
+            echo "Пропущено удаление неожиданного пути: $dir" >&2
+            ;;
+    esac
 }
 
 test_proxy() {
@@ -139,8 +390,13 @@ test_proxy() {
         return 0
     fi
     echo "Прокси $host:$HTTP_PORT не отвечает (код '$code')."
-    echo "Проверь: ПК включён, zapret и прокси запущены (start-all.bat или ZAPRET CONTROL),"
-    echo "Mac и ПК в одной сети, порт 8080 не блокирует брандмауэр Windows."
+    if [ "$MODE" = "local" ]; then
+        echo "Проверь: локальный прокси запущен (--local), порт $HTTP_PORT не занят,"
+        echo "журнал: $(log_file)."
+    else
+        echo "Проверь: ПК включён, zapret и прокси запущены (start-all.bat или ZAPRET CONTROL),"
+        echo "Mac и ПК в одной сети, порт 8080 не блокирует брандмауэр Windows."
+    fi
     return 1
 }
 
@@ -184,15 +440,28 @@ ORIG_ARGS=("$@")
 ACTION=""
 ARG_HOST=""
 ARG_SERVICE=""
+ARG_AUTOSTART=""
+ARG_SPLIT=""
+ARG_DELAY=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --on) ACTION="on"; [ $# -ge 2 ] && { ARG_HOST="$2"; shift; } ;;
+        --lan) ACTION="on"; [ $# -ge 2 ] && { ARG_HOST="$2"; shift; } ;;
+        --local) ACTION="local" ;;
         --off) ACTION="off" ;;
         --status) ACTION="status" ;;
         --test) ACTION="test"; [ $# -ge 2 ] && { ARG_HOST="$2"; shift; } ;;
         --service) [ $# -ge 2 ] && { ARG_SERVICE="$2"; shift; } ;;
+        --install) ACTION="install" ;;
+        --uninstall) ACTION="uninstall" ;;
+        --autostart)
+            ACTION="autostart"
+            [ $# -ge 2 ] && { ARG_AUTOSTART="$2"; shift; }
+            ;;
+        --split) [ $# -ge 2 ] && { ARG_SPLIT="$2"; shift; } ;;
+        --delay) [ $# -ge 2 ] && { ARG_DELAY="$2"; shift; } ;;
         -h|--help)
-            sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         -V|--version)
@@ -212,71 +481,161 @@ need_macos
 # чтобы потом сообщить об опечатке в IP.
 [ -n "$ARG_HOST" ] && { valid_host "$ARG_HOST" || die "некорректный адрес: $ARG_HOST"; }
 
-# networksetup и запись конфигурации требуют root, поэтому поднимаем права
-# до любого действия (кроме --help, который завершается при разборе аргументов).
-if [ "$(id -u)" -ne 0 ]; then
-    exec sudo -p "Пароль администратора: " "$0" ${ORIG_ARGS[@]+"${ORIG_ARGS[@]}"}
-fi
+# Права root нужны только для изменения системных настроек прокси.
+case "$ACTION" in
+    on|local|off|status|test|uninstall)
+        if [ "$(id -u)" -ne 0 ]; then
+            exec sudo -p "Пароль администратора: " "$0" ${ORIG_ARGS[@]+"${ORIG_ARGS[@]}"}
+        fi
+        ;;
+esac
 
 load_conf
 [ -n "$ARG_SERVICE" ] && SERVICE="$ARG_SERVICE"
+[ -n "$ARG_SPLIT" ] && { case "$ARG_SPLIT" in ''|*[!0-9]*) die "некорректный --split: $ARG_SPLIT" ;; esac; SPLIT="$ARG_SPLIT"; }
+[ -n "$ARG_DELAY" ] && { case "$ARG_DELAY" in ''|*[!0-9]*) die "некорректный --delay: $ARG_DELAY" ;; esac; DELAY="$ARG_DELAY"; }
 
 case "$ACTION" in
+    install)
+        install_client
+        exit 0
+        ;;
+    uninstall)
+        unset_proxy "$SERVICE"
+        uninstall_client
+        exit 0
+        ;;
+    autostart)
+        case "$ARG_AUTOSTART" in
+            on)  enable_autostart ;;
+            off) disable_autostart ;;
+            *)   die "укажи: --autostart on|off" ;;
+        esac
+        exit 0
+        ;;
     status) show_status "$SERVICE"; exit 0 ;;
-    off) unset_proxy "$SERVICE"; exit 0 ;;
+    off)
+        stop_daemon
+        unset_proxy "$SERVICE"
+        exit 0
+        ;;
     test)
-        TEST_HOST="${ARG_HOST:-$HOST}"
+        TEST_HOST="${ARG_HOST:-}"
+        if [ -z "$TEST_HOST" ]; then
+            if [ "$MODE" = "local" ]; then
+                TEST_HOST="$LOCAL_HOST"
+            else
+                TEST_HOST="$HOST"
+            fi
+        fi
         [ -n "$TEST_HOST" ] || die "не указан адрес: --test 192.168.1.10"
         test_proxy "$TEST_HOST"; exit $? ;;
+    local)
+        MODE="local"
+        save_conf
+        start_daemon || exit 1
+        set_proxy "$LOCAL_HOST" "$SERVICE"
+        exit 0
+        ;;
     on)
+        MODE="lan"
         HOST="${ARG_HOST:-$HOST}"
         [ -n "$HOST" ] || die "не указан адрес: --on 192.168.1.10"
         valid_host "$HOST" || die "некорректный адрес: $HOST"
+        stop_daemon
         save_conf
         set_proxy "$HOST" "$SERVICE"
         exit 0
         ;;
 esac
 
+# ---------- интерактивное меню ----------
+
+ask_autostart() {
+    if [ -f "$(plist_file)" ]; then
+        disable_autostart
+    else
+        if [ "$MODE" != "local" ]; then
+            echo "Сначала включи локальный режим (пункт 2)." >&2
+            return 1
+        fi
+        enable_autostart
+    fi
+}
+
+run_as_user() {
+    local user
+    user=$(real_user)
+    if [ "$(id -u)" -eq 0 ] && [ -n "$user" ]; then
+        sudo -u "$user" "$SELF_DIR/$(basename "$0")" "$@"
+    else
+        "$SELF_DIR/$(basename "$0")" "$@"
+    fi
+}
+
 while true; do
     echo
     echo "=== $APP_NAME — macOS клиент $APP_VERSION ==="
-    if [ -n "$HOST" ]; then
-        echo "Windows-ПК: $HOST (HTTP $HTTP_PORT / SOCKS5 $SOCKS_PORT)"
+    echo "Режим: $(mode_label)"
+    echo "Локальный прокси: $(daemon_label)"
+    if [ -f "$(plist_file)" ]; then
+        echo "Автозапуск: включён"
     else
-        echo "Windows-ПК: не задан"
+        echo "Автозапуск: выключен"
     fi
     echo "Подключение: $SERVICE"
     echo
-    echo "  1) Указать IP Windows-ПК и включить прокси"
-    echo "  2) Выключить прокси"
-    echo "  3) Показать текущий статус"
-    echo "  4) Проверить связь через прокси"
-    echo "  5) Выбрать сетевое подключение"
+    echo "  1) LAN: указать IP Windows-ПК и включить прокси"
+    echo "  2) Локальный режим на этом Mac (без Windows-ПК)"
+    echo "  3) Выключить прокси"
+    echo "  4) Показать статус"
+    echo "  5) Проверить связь"
+    echo "  6) Выбрать сетевое подключение"
+    echo "  7) Установить клиент в ~/Applications"
+    echo "  8) Автозапуск вкл/выкл"
     echo "  0) Выход"
     printf "Выбор: "
     read -r choice
     case "$choice" in
         1)
             HOST=$(ask_host "$HOST") || exit 1
+            MODE="lan"
+            stop_daemon
             save_conf
             set_proxy "$HOST" "$SERVICE"
             test_proxy "$HOST" || true
             ;;
-        2) unset_proxy "$SERVICE" ;;
-        3) show_status "$SERVICE" ;;
-        4)
-            if [ -z "$HOST" ]; then
-                HOST=$(ask_host "") || exit 1
-                save_conf
-            fi
-            test_proxy "$HOST" || true
+        2)
+            MODE="local"
+            save_conf
+            start_daemon || true
+            set_proxy "$LOCAL_HOST" "$SERVICE"
+            test_proxy "$LOCAL_HOST" || true
             ;;
+        3)
+            stop_daemon
+            unset_proxy "$SERVICE"
+            ;;
+        4) show_status "$SERVICE" ;;
         5)
+            if [ "$MODE" = "local" ]; then
+                test_proxy "$LOCAL_HOST" || true
+            else
+                if [ -z "$HOST" ]; then
+                    HOST=$(ask_host "") || exit 1
+                    MODE="lan"
+                    save_conf
+                fi
+                test_proxy "$HOST" || true
+            fi
+            ;;
+        6)
             SERVICE=$(ask_service "$SERVICE") || exit 1
             save_conf
             echo "Выбрано подключение: $SERVICE"
             ;;
+        7) run_as_user --install ;;
+        8) ask_autostart || true ;;
         0|q|Q) echo "Пока."; exit 0 ;;
         *) echo "Нет такого пункта." ;;
     esac

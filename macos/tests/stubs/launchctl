@@ -1,0 +1,4 @@
+#!/bin/bash
+# Заглушка launchctl: пишет вызов в лог и не трогает систему.
+echo "launchctl $*" >>"${SIM_LOG:-/dev/null}"
+exit 0

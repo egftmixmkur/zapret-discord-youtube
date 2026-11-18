@@ -10,6 +10,7 @@
 # Unix-скрипты должны оставаться с LF, иначе на macOS ломается shebang
 *.sh text eol=lf
 *.command text eol=lf
+*.pl text eol=lf
 macos/tests/stubs/* text eol=lf
 
 # Бинарники не трогаем

@@ -1,0 +1,18 @@
+#!/bin/bash
+# Заглушка perl для эмулятора: изображает фоновый локальный прокси.
+# Пишет свой pid в файл из --pid и живёт до SIGTERM.
+echo "perl $*" >>"${SIM_LOG:-/dev/null}"
+pidfile=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --pid) pidfile="${2:-}"; shift ;;
+    esac
+    shift
+done
+if [ -n "$pidfile" ]; then
+    echo $$ >"$pidfile"
+fi
+trap 'rm -f "$pidfile"; exit 0' TERM INT
+while :; do
+    sleep 1
+done

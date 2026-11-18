@@ -13,6 +13,11 @@ ok() { PASS=$((PASS + 1)); echo "  [OK]   $1"; }
 bad() { FAIL=$((FAIL + 1)); echo "  [FAIL] $1"; }
 
 setup() {
+    if [ -n "${SIM_HOME:-}" ]; then
+        local old
+        old=$(cat "$SIM_HOME/Library/Application Support/ZapretControl/proxy.pid" 2>/dev/null)
+        [ -n "${old:-}" ] && kill "$old" 2>/dev/null || true
+    fi
     SIM_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/zapret-sim.XXXXXX")
     mkdir -p "$SIM_ROOT/home"
     export SIM_HOME="$SIM_ROOT/home"
@@ -120,7 +125,7 @@ out_has "Прокси включён для «Wi-Fi»" && ok "включил п�
 state_has "setwebproxy|Wi-Fi|192.168.1.99|8080|on" && ok "применил введённый IP" || bad "IP не применился"
 out_has "IP или имя Windows-ПК" && ok "спросил адрес" || bad "не спросил адрес"
 conf_has 'HOST="192.168.1.99"' && ok "сохранил адрес" || bad "не сохранил"
-out_has "0.1.0-beta" && ok "показывает версию с пометкой бета" || bad "нет версии в шапке"
+out_has "0.2.0-beta" && ok "показывает версию с пометкой бета" || bad "нет версии в шапке"
 
 # --- 10. под root sudo не нужен ---
 echo "10) --off под root"
@@ -134,8 +139,80 @@ echo "11) --version"
 setup 501
 run --version
 [ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
-out_has "0.1.0-beta" && ok "версия клиента 0.1.0-beta" || bad "нет версии"
+out_has "0.2.0-beta" && ok "версия клиента 0.2.0-beta" || bad "нет версии"
 [ ! -s "$SIM_LOG" ] && ok "не трогает систему" || bad "вызвал $(head -1 "$SIM_LOG")"
+
+# --- 12. локальный режим: прокси на этом Mac ---
+echo "12) --local (локальный прокси без Windows-ПК)"
+setup 501
+run --local
+[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+log_has "sudo" && ok "поднял права через sudo" || bad "не вызвал sudo"
+log_has "perl " && ok "запустил локальный прокси" || bad "прокси не запущен"
+state_has "setwebproxy|Wi-Fi|127.0.0.1|8080|on" && ok "HTTP на 127.0.0.1:8080" || bad "HTTP не включён"
+state_has "setsocksfirewallproxy|Wi-Fi|127.0.0.1|1080|on" && ok "SOCKS5 на 127.0.0.1:1080" || bad "SOCKS5 не включён"
+conf_has 'MODE="local"' && ok "режим local сохранён" || bad "режим не сохранён"
+pid=$(cat "$SIM_HOME/Library/Application Support/ZapretControl/proxy.pid" 2>/dev/null)
+[ -n "${pid:-}" ] && kill -0 "$pid" 2>/dev/null && ok "процесс прокси жив (pid $pid)" || bad "процесс не жив"
+
+# --- 13. статус в локальном режиме ---
+echo "13) --status (local)"
+run --status
+[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+out_has "Режим: локальный" && ok "показывает локальный режим" || bad "нет режима"
+out_has "Локальный прокси: работает" && ok "видит работающий прокси" || bad "не видит прокси"
+out_has "Enabled: Yes" && ok "системный прокси включён" || bad "прокси не включён"
+
+# --- 14. выключение останавливает демон ---
+echo "14) --off (local)"
+run --off
+[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+if [ -n "${pid:-}" ] && kill -0 "$pid" 2>/dev/null; then bad "процесс остался жив"; else ok "процесс остановлен"; fi
+[ ! -f "$SIM_HOME/Library/Application Support/ZapretControl/proxy.pid" ] && ok "pid-файл убран" || bad "pid-файл остался"
+state_has "setwebproxystate|Wi-Fi|||off" && ok "HTTP выключен" || bad "HTTP не выключен"
+
+# --- 15. установка в ~/Applications ---
+echo "15) --install"
+setup 501
+run --install
+[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+app="$SIM_HOME/Applications/ZapretControl"
+[ -x "$app/zapret-proxy.command" ] && ok "клиент установлен" || bad "нет клиента"
+[ -f "$app/lib/desync-proxy.pl" ] && ok "локальный прокси установлен" || bad "нет lib"
+[ -f "$app/README.md" ] && ok "документация установлена" || bad "нет README"
+if log_has "sudo"; then bad "install потребовал root"; else ok "install без root"; fi
+
+# --- 16. автозапуск через launchd ---
+echo "16) --autostart on/off"
+plist="$SIM_HOME/Library/LaunchAgents/com.zapretcontrol.proxy.plist"
+run --local
+run --autostart on
+[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+[ -f "$plist" ] && ok "plist создан" || bad "plist не создан"
+grep -q "com.zapretcontrol.proxy" "$plist" 2>/dev/null && ok "label в plist" || bad "нет label"
+grep -q "desync-proxy.pl" "$plist" 2>/dev/null && ok "путь к прокси в plist" || bad "нет пути"
+log_has "launchctl" && ok "вызван launchctl" || bad "launchctl не вызван"
+run --autostart off
+[ ! -f "$plist" ] && ok "plist удалён" || bad "plist остался"
+log_has "bootout" || log_has "unload" && ok "launchd выгружен" || bad "launchd не выгружен"
+
+# --- 17. удаление клиента ---
+echo "17) --uninstall"
+run --uninstall
+[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+[ ! -d "$app" ] && ok "папка клиента удалена" || bad "папка осталась"
+[ ! -f "$plist" ] && ok "plist удалён" || bad "plist остался"
+
+# --- 18. самопроверка локального прокси (настоящий perl) ---
+echo "18) desync-proxy.pl --selftest"
+if [ -x /usr/bin/perl ]; then
+    out=$(/usr/bin/perl "$HERE/../lib/desync-proxy.pl" --selftest 2>&1)
+    rc=$?
+    [ "$rc" -eq 0 ] && ok "selftest exit 0" || bad "selftest exit $rc"
+    echo "$out" | grep -q "selftest: OK" && ok "split/private проверки прошли" || bad "selftest не OK"
+else
+    ok "perl недоступен — пропущено"
+fi
 
 echo
 echo "Итого: $PASS успешно, $FAIL провалов"
