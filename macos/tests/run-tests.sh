@@ -11,6 +11,16 @@ FAIL=0
 
 ok() { PASS=$((PASS + 1)); echo "  [OK]   $1"; }
 bad() { FAIL=$((FAIL + 1)); echo "  [FAIL] $1"; }
+expect_exit0() {
+    if [ "$RC" -eq 0 ]; then
+        ok "exit 0"
+    else
+        bad "exit $RC"
+        echo "    --- output ---"
+        echo "$OUT" | sed 's/^/    | /'
+        echo "    --- end ---"
+    fi
+}
 
 setup() {
     if [ -n "${SIM_HOME:-}" ]; then
@@ -50,7 +60,7 @@ echo
 echo "1) --help"
 setup 501
 run --help
-[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+expect_exit0
 out_has "Использование:" && ok "печатает справку" || bad "нет справки"
 [ ! -s "$SIM_LOG" ] && ok "не трогает систему" || bad "вызвал $(head -1 "$SIM_LOG")"
 
@@ -58,7 +68,7 @@ out_has "Использование:" && ok "печатает справку" ||
 echo "2) --on 192.168.1.50 (не root)"
 setup 501
 run --on 192.168.1.50
-[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+expect_exit0
 log_has "sudo" && ok "поднял права через sudo" || bad "не вызвал sudo"
 log_has "-setwebproxy Wi-Fi 192.168.1.50 8080" && ok "HTTP-прокси 8080" || bad "нет -setwebproxy"
 log_has "-setsecurewebproxy Wi-Fi 192.168.1.50 8080" && ok "HTTPS-прокси 8080" || bad "нет -setsecurewebproxy"
@@ -70,7 +80,7 @@ conf_has 'HOST="192.168.1.50"' && ok "адрес сохранён в конфи�
 # --- 3. --status читает состояние ---
 echo "3) --status"
 run --status
-[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+expect_exit0
 out_has "Enabled: Yes" && ok "прокси включён" || bad "не видит включения"
 out_has "Server: 192.168.1.50" && ok "сервер из конфига" || bad "нет сервера"
 out_has "Port: 8080" && ok "порт 8080" || bad "нет порта"
@@ -78,7 +88,7 @@ out_has "Port: 8080" && ok "порт 8080" || bad "нет порта"
 # --- 4. --test без аргумента берёт адрес из конфига ---
 echo "4) --test"
 run --test
-[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+expect_exit0
 out_has "отвечает" && ok "видит рабочий прокси" || bad "не видит прокси"
 log_has "http://192.168.1.50:8080" && ok "проверяет через конфиг" || bad "не тот адрес"
 log_has "youtube.com" && ok "проверяет YouTube" || bad "нет проверки YouTube"
@@ -87,7 +97,7 @@ log_has "youtube.com" && ok "проверяет YouTube" || bad "нет пров
 echo "5) --on 10.0.0.7 --service Ethernet"
 flush_case
 run --on my-pc.local --service "USB 10/100/1000 LAN"
-[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+expect_exit0
 log_has "-setwebproxy USB 10/100/1000 LAN my-pc.local 8080" && ok "выбрано другое подключение" || bad "подключение не применилось"
 conf_has 'HOST="my-pc.local"' && ok "hostname сохранён" || bad "hostname не сохранён"
 conf_has 'SERVICE="USB 10/100/1000 LAN"' && ok "подключение сохранено" || bad "подключение не сохранено"
@@ -96,7 +106,7 @@ conf_has 'SERVICE="USB 10/100/1000 LAN"' && ok "подключение сохр�
 echo "6) --off"
 flush_case
 run --off
-[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+expect_exit0
 log_has "-setwebproxystate USB 10/100/1000 LAN off" && ok "HTTP выключен" || bad "HTTP не выключен"
 log_has "-setsocksfirewallproxystate USB 10/100/1000 LAN off" && ok "SOCKS выключен" || bad "SOCKS не выключен"
 
@@ -120,7 +130,7 @@ echo "9) меню: 1 -> 192.168.1.99 -> 0"
 setup 501
 OUT=$(printf '1\n192.168.1.99\n0\n' | bash "$SCRIPT" 2>&1)
 RC=$?
-[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+expect_exit0
 out_has "Прокси включён для «Wi-Fi»" && ok "включил прокси" || bad "не включил"
 state_has "setwebproxy|Wi-Fi|192.168.1.99|8080|on" && ok "применил введённый IP" || bad "IP не применился"
 out_has "IP или имя Windows-ПК" && ok "спросил адрес" || bad "не спросил адрес"
@@ -131,14 +141,14 @@ out_has "0.3.0-beta" && ok "показывает версию с пометко�
 echo "10) --off под root"
 setup 0
 run --off
-[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+expect_exit0
 if log_has "sudo"; then bad "зачем-то вызвал sudo"; else ok "без sudo"; fi
 
 # --- 11. --version ---
 echo "11) --version"
 setup 501
 run --version
-[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+expect_exit0
 out_has "0.3.0-beta" && ok "версия клиента 0.3.0-beta" || bad "нет версии"
 [ ! -s "$SIM_LOG" ] && ok "не трогает систему" || bad "вызвал $(head -1 "$SIM_LOG")"
 
@@ -146,7 +156,7 @@ out_has "0.3.0-beta" && ok "версия клиента 0.3.0-beta" || bad "не
 echo "12) --local (локальный прокси без Windows-ПК)"
 setup 501
 run --local
-[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+expect_exit0
 log_has "sudo" && ok "поднял права через sudo" || bad "не вызвал sudo"
 log_has "perl " && ok "запустил локальный прокси" || bad "прокси не запущен"
 state_has "setwebproxy|Wi-Fi|127.0.0.1|8080|on" && ok "HTTP на 127.0.0.1:8080" || bad "HTTP не включён"
@@ -158,7 +168,7 @@ pid=$(cat "$SIM_HOME/Library/Application Support/ZapretControl/proxy.pid" 2>/dev
 # --- 13. статус в локальном режиме ---
 echo "13) --status (local)"
 run --status
-[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+expect_exit0
 out_has "Режим: локальный" && ok "показывает локальный режим" || bad "нет режима"
 out_has "Локальный прокси: работает" && ok "видит работающий прокси" || bad "не видит прокси"
 out_has "Enabled: Yes" && ok "системный прокси включён" || bad "прокси не включён"
@@ -166,7 +176,7 @@ out_has "Enabled: Yes" && ok "системный прокси включён" ||
 # --- 14. выключение останавливает демон ---
 echo "14) --off (local)"
 run --off
-[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+expect_exit0
 if [ -n "${pid:-}" ] && kill -0 "$pid" 2>/dev/null; then bad "процесс остался жив"; else ok "процесс остановлен"; fi
 [ ! -f "$SIM_HOME/Library/Application Support/ZapretControl/proxy.pid" ] && ok "pid-файл убран" || bad "pid-файл остался"
 state_has "setwebproxystate|Wi-Fi|||off" && ok "HTTP выключен" || bad "HTTP не выключен"
@@ -175,7 +185,7 @@ state_has "setwebproxystate|Wi-Fi|||off" && ok "HTTP выключен" || bad "H
 echo "15) --install"
 setup 501
 run --install
-[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+expect_exit0
 app="$SIM_HOME/Applications/ZapretControl"
 [ -x "$app/zapret-proxy.command" ] && ok "клиент установлен" || bad "нет клиента"
 [ -f "$app/lib/desync-proxy.pl" ] && ok "локальный прокси установлен" || bad "нет lib"
@@ -187,7 +197,7 @@ echo "16) --autostart on/off"
 plist="$SIM_HOME/Library/LaunchAgents/com.zapretcontrol.proxy.plist"
 run --local
 run --autostart on
-[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+expect_exit0
 [ -f "$plist" ] && ok "plist создан" || bad "plist не создан"
 grep -q "com.zapretcontrol.proxy" "$plist" 2>/dev/null && ok "label в plist" || bad "нет label"
 grep -q "desync-proxy.pl" "$plist" 2>/dev/null && ok "путь к прокси в plist" || bad "нет пути"
@@ -199,7 +209,7 @@ log_has "bootout" || log_has "unload" && ok "launchd выгружен" || bad "l
 # --- 17. удаление клиента ---
 echo "17) --uninstall"
 run --uninstall
-[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+expect_exit0
 [ ! -d "$app" ] && ok "папка клиента удалена" || bad "папка осталась"
 [ ! -f "$plist" ] && ok "plist удалён" || bad "plist остался"
 
@@ -235,7 +245,7 @@ setup 501
 run --local
 oldpid=$(cat "$SIM_HOME/Library/Application Support/ZapretControl/proxy.pid" 2>/dev/null)
 run --restart
-[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+expect_exit0
 log_has "perl " && ok "перезапустил прокси" || bad "прокси не перезапущен"
 state_has "setwebproxy|Wi-Fi|127.0.0.1|8080|on" && ok "системный прокси на месте" || bad "прокси сброшен"
 newpid=$(cat "$SIM_HOME/Library/Application Support/ZapretControl/proxy.pid" 2>/dev/null)
@@ -246,7 +256,7 @@ run --off
 echo "21) --local с --http-port/--socks-port"
 setup 501
 run --local --http-port 18080 --socks-port 11080
-[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+expect_exit0
 state_has "setwebproxy|Wi-Fi|127.0.0.1|18080|on" && ok "HTTP на 18080" || bad "HTTP порт не применён"
 state_has "setsocksfirewallproxy|Wi-Fi|127.0.0.1|11080|on" && ok "SOCKS на 11080" || bad "SOCKS порт не применён"
 conf_has 'HTTP_PORT="18080"' && ok "HTTP порт сохранён" || bad "порт не сохранён"
