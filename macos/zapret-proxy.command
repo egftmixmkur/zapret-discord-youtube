@@ -11,18 +11,24 @@
 #   ./zapret-proxy.command --local          # локальный режим (без Windows)
 #   ./zapret-proxy.command --on 192.168.1.10
 #   ./zapret-proxy.command --off
+#   ./zapret-proxy.command --restart
 #   ./zapret-proxy.command --status
 #   ./zapret-proxy.command --test [IP]
+#   ./zapret-proxy.command --doctor
+#   ./zapret-proxy.command --logs [N]
 #   ./zapret-proxy.command --install | --uninstall
 #   ./zapret-proxy.command --autostart on|off
 #   ./zapret-proxy.command --service "Wi-Fi"
+#   ./zapret-proxy.command --http-port 8080 --socks-port 1080
 #   ./zapret-proxy.command --version
 set -u
 
 APP_NAME="ZAPRET CONTROL"
-APP_VERSION="0.2.0-beta"
-HTTP_PORT=8080
-SOCKS_PORT=1080
+APP_VERSION="0.3.0-beta"
+DEFAULT_HTTP_PORT=8080
+DEFAULT_SOCKS_PORT=1080
+HTTP_PORT=$DEFAULT_HTTP_PORT
+SOCKS_PORT=$DEFAULT_SOCKS_PORT
 BYPASS_DOMAINS="localhost 127.0.0.1 *.local 192.168.* 10.* 172.16.* 172.17.* 172.18.* 172.19.* 172.2*.* 172.30.* 172.31.*"
 DEFAULT_SERVICE="Wi-Fi"
 LOCAL_HOST="127.0.0.1"
@@ -80,6 +86,8 @@ load_conf() {
     SERVICE="$DEFAULT_SERVICE"
     SPLIT=0
     DELAY=0
+    HTTP_PORT=$DEFAULT_HTTP_PORT
+    SOCKS_PORT=$DEFAULT_SOCKS_PORT
     local file key value
     file=$(conf_file)
     [ -f "$file" ] || return 0
@@ -91,6 +99,8 @@ load_conf() {
             SERVICE) [ -n "$value" ] && SERVICE="$value" ;;
             SPLIT) case "$value" in ''|*[!0-9]*) ;; *) SPLIT="$value" ;; esac ;;
             DELAY) case "$value" in ''|*[!0-9]*) ;; *) DELAY="$value" ;; esac ;;
+            HTTP_PORT) case "$value" in ''|*[!0-9]*) ;; *) HTTP_PORT="$value" ;; esac ;;
+            SOCKS_PORT) case "$value" in ''|*[!0-9]*) ;; *) SOCKS_PORT="$value" ;; esac ;;
         esac
     done <"$file"
     [ -n "${HOST:-}" ] || HOST=""
@@ -107,6 +117,8 @@ save_conf() {
         echo "MODE=\"$MODE\""
         echo "HOST=\"$HOST\""
         echo "SERVICE=\"$SERVICE\""
+        echo "HTTP_PORT=\"$HTTP_PORT\""
+        echo "SOCKS_PORT=\"$SOCKS_PORT\""
         echo "SPLIT=\"$SPLIT\""
         echo "DELAY=\"$DELAY\""
     } >"$file"
@@ -434,6 +446,118 @@ EOF
     echo "$name"
 }
 
+show_logs() {
+    local n="${1:-40}" file
+    file=$(log_file)
+    if [ ! -f "$file" ]; then
+        echo "Журнал не найден: $file"
+        echo "Он создаётся при запуске локального прокси (--local)."
+        return 1
+    fi
+    echo "=== $(basename "$file") (последние $n строк) ==="
+    tail -n "$n" "$file"
+}
+
+run_doctor() {
+    local ok=0 warn=0 bad=0 lib host
+    echo "=== $APP_NAME macOS клиент $APP_VERSION — диагностика ==="
+    echo "Платформа: $(uname -s)  пользователь: $(id -un 2>/dev/null || echo '?')  uid=$(id -u)"
+    if [ "$(uname -s)" = "Darwin" ]; then
+        echo "[OK] macOS"
+        ok=$((ok + 1))
+    else
+        echo "[!!] этот клиент предназначен для macOS"
+        bad=$((bad + 1))
+    fi
+    if command -v perl >/dev/null 2>&1; then
+        echo "[OK] perl: $(command -v perl)"
+        ok=$((ok + 1))
+    else
+        echo "[!!] perl не найден (нужен для локального режима)"
+        bad=$((bad + 1))
+    fi
+    if command -v networksetup >/dev/null 2>&1; then
+        echo "[OK] networksetup найден"
+        ok=$((ok + 1))
+    else
+        echo "[!!] networksetup не найден"
+        bad=$((bad + 1))
+    fi
+    if command -v curl >/dev/null 2>&1; then
+        echo "[OK] curl найден"
+        ok=$((ok + 1))
+    else
+        echo "[--] curl не найден (не будет работать --test)"
+        warn=$((warn + 1))
+    fi
+    if lib=$(local_lib 2>/dev/null); then
+        echo "[OK] локальный прокси: $lib"
+        ok=$((ok + 1))
+    else
+        echo "[--] lib/desync-proxy.pl не найден рядом со скриптом"
+        warn=$((warn + 1))
+    fi
+    echo "[..] режим: $(mode_label), подключение: $SERVICE, HTTP:$HTTP_PORT SOCKS:$SOCKS_PORT"
+    if [ -f "$(conf_file)" ]; then
+        echo "[OK] конфиг: $(conf_file)"
+        ok=$((ok + 1))
+    else
+        echo "[--] конфиг ещё не создан"
+        warn=$((warn + 1))
+    fi
+    if daemon_running; then
+        echo "[OK] локальный прокси работает (pid $(daemon_pid))"
+        ok=$((ok + 1))
+    else
+        echo "[--] локальный прокси не запущен"
+        warn=$((warn + 1))
+    fi
+    if [ -f "$(plist_file)" ]; then
+        echo "[OK] автозапуск включён: $(plist_file)"
+        ok=$((ok + 1))
+    else
+        echo "[--] автозапуск не настроен"
+        warn=$((warn + 1))
+    fi
+    if [ -f "$(log_file)" ]; then
+        echo "[OK] журнал: $(log_file)"
+        ok=$((ok + 1))
+    else
+        echo "[--] журнала ещё нет"
+        warn=$((warn + 1))
+    fi
+    echo "--- системный прокси ($SERVICE) ---"
+    networksetup -getwebproxy "$SERVICE" 2>/dev/null || echo "(не удалось прочитать)"
+    echo "---"
+    if [ "$MODE" = "local" ]; then
+        host="$LOCAL_HOST"
+    else
+        host="$HOST"
+    fi
+    if [ -n "$host" ]; then
+        echo "Подсказка: проверь связь командой --test $host"
+    fi
+    echo "Итог: ok=$ok warn=$warn bad=$bad"
+    [ "$bad" -eq 0 ]
+}
+
+do_restart() {
+    if [ "$MODE" = "local" ]; then
+        stop_daemon
+        save_conf
+        start_daemon || exit 1
+        set_proxy "$LOCAL_HOST" "$SERVICE"
+        echo "Локальный режим перезапущен."
+        return 0
+    fi
+    if [ -z "$HOST" ]; then
+        die "не задан режим: используй --local или --on 192.168.1.10"
+    fi
+    stop_daemon
+    set_proxy "$HOST" "$SERVICE"
+    echo "LAN-режим применён заново ($HOST)."
+}
+
 # ---------- разбор аргументов ----------
 
 ORIG_ARGS=("$@")
@@ -443,14 +567,20 @@ ARG_SERVICE=""
 ARG_AUTOSTART=""
 ARG_SPLIT=""
 ARG_DELAY=""
+ARG_HTTP_PORT=""
+ARG_SOCKS_PORT=""
+ARG_LOGS="40"
 while [ $# -gt 0 ]; do
     case "$1" in
         --on) ACTION="on"; [ $# -ge 2 ] && { ARG_HOST="$2"; shift; } ;;
         --lan) ACTION="on"; [ $# -ge 2 ] && { ARG_HOST="$2"; shift; } ;;
         --local) ACTION="local" ;;
         --off) ACTION="off" ;;
+        --restart) ACTION="restart" ;;
         --status) ACTION="status" ;;
-        --test) ACTION="test"; [ $# -ge 2 ] && { ARG_HOST="$2"; shift; } ;;
+        --doctor) ACTION="doctor" ;;
+        --test) ACTION="test"; [ $# -ge 2 ] && case "$2" in -*|"") ;; *) ARG_HOST="$2"; shift ;; esac ;;
+        --logs|--log) ACTION="logs"; [ $# -ge 2 ] && case "$2" in ''|*[!0-9]*) ;; *) ARG_LOGS="$2"; shift ;; esac ;;
         --service) [ $# -ge 2 ] && { ARG_SERVICE="$2"; shift; } ;;
         --install) ACTION="install" ;;
         --uninstall) ACTION="uninstall" ;;
@@ -460,8 +590,10 @@ while [ $# -gt 0 ]; do
             ;;
         --split) [ $# -ge 2 ] && { ARG_SPLIT="$2"; shift; } ;;
         --delay) [ $# -ge 2 ] && { ARG_DELAY="$2"; shift; } ;;
+        --http-port) [ $# -ge 2 ] && { ARG_HTTP_PORT="$2"; shift; } ;;
+        --socks-port) [ $# -ge 2 ] && { ARG_SOCKS_PORT="$2"; shift; } ;;
         -h|--help)
-            sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         -V|--version)
@@ -481,9 +613,10 @@ need_macos
 # чтобы потом сообщить об опечатке в IP.
 [ -n "$ARG_HOST" ] && { valid_host "$ARG_HOST" || die "некорректный адрес: $ARG_HOST"; }
 
-# Права root нужны только для изменения системных настроек прокси.
+# Права root нужны для изменения системных настроек прокси и управления демоном.
+# Без аргументов запускается интерактивное меню — ему тоже нужен root.
 case "$ACTION" in
-    on|local|off|status|test|uninstall)
+    ""|on|local|off|restart|status|test|uninstall)
         if [ "$(id -u)" -ne 0 ]; then
             exec sudo -p "Пароль администратора: " "$0" ${ORIG_ARGS[@]+"${ORIG_ARGS[@]}"}
         fi
@@ -494,6 +627,8 @@ load_conf
 [ -n "$ARG_SERVICE" ] && SERVICE="$ARG_SERVICE"
 [ -n "$ARG_SPLIT" ] && { case "$ARG_SPLIT" in ''|*[!0-9]*) die "некорректный --split: $ARG_SPLIT" ;; esac; SPLIT="$ARG_SPLIT"; }
 [ -n "$ARG_DELAY" ] && { case "$ARG_DELAY" in ''|*[!0-9]*) die "некорректный --delay: $ARG_DELAY" ;; esac; DELAY="$ARG_DELAY"; }
+[ -n "$ARG_HTTP_PORT" ] && { case "$ARG_HTTP_PORT" in ''|*[!0-9]*) die "некорректный --http-port: $ARG_HTTP_PORT" ;; esac; HTTP_PORT="$ARG_HTTP_PORT"; }
+[ -n "$ARG_SOCKS_PORT" ] && { case "$ARG_SOCKS_PORT" in ''|*[!0-9]*) die "некорректный --socks-port: $ARG_SOCKS_PORT" ;; esac; SOCKS_PORT="$ARG_SOCKS_PORT"; }
 
 case "$ACTION" in
     install)
@@ -514,6 +649,12 @@ case "$ACTION" in
         exit 0
         ;;
     status) show_status "$SERVICE"; exit 0 ;;
+    doctor) run_doctor; exit $? ;;
+    logs) show_logs "$ARG_LOGS"; exit $? ;;
+    restart)
+        do_restart
+        exit $?
+        ;;
     off)
         stop_daemon
         unset_proxy "$SERVICE"
@@ -524,6 +665,9 @@ case "$ACTION" in
         if [ -z "$TEST_HOST" ]; then
             if [ "$MODE" = "local" ]; then
                 TEST_HOST="$LOCAL_HOST"
+                if ! daemon_running; then
+                    echo "Внимание: локальный прокси не запущен. Запусти --local или --restart." >&2
+                fi
             else
                 TEST_HOST="$HOST"
             fi
@@ -588,11 +732,14 @@ while true; do
     echo "  1) LAN: указать IP Windows-ПК и включить прокси"
     echo "  2) Локальный режим на этом Mac (без Windows-ПК)"
     echo "  3) Выключить прокси"
-    echo "  4) Показать статус"
-    echo "  5) Проверить связь"
-    echo "  6) Выбрать сетевое подключение"
-    echo "  7) Установить клиент в ~/Applications"
-    echo "  8) Автозапуск вкл/выкл"
+    echo "  4) Перезапустить текущий режим"
+    echo "  5) Показать статус"
+    echo "  6) Проверить связь"
+    echo "  7) Выбрать сетевое подключение"
+    echo "  8) Журнал локального прокси"
+    echo "  9) Диагностика"
+    echo " 10) Установить клиент в ~/Applications"
+    echo " 11) Автозапуск вкл/выкл"
     echo "  0) Выход"
     printf "Выбор: "
     read -r choice
@@ -616,8 +763,9 @@ while true; do
             stop_daemon
             unset_proxy "$SERVICE"
             ;;
-        4) show_status "$SERVICE" ;;
-        5)
+        4) do_restart || true ;;
+        5) show_status "$SERVICE" ;;
+        6)
             if [ "$MODE" = "local" ]; then
                 test_proxy "$LOCAL_HOST" || true
             else
@@ -629,13 +777,15 @@ while true; do
                 test_proxy "$HOST" || true
             fi
             ;;
-        6)
+        7)
             SERVICE=$(ask_service "$SERVICE") || exit 1
             save_conf
             echo "Выбрано подключение: $SERVICE"
             ;;
-        7) run_as_user --install ;;
-        8) ask_autostart || true ;;
+        8) show_logs 40 || true ;;
+        9) run_doctor || true ;;
+        10) run_as_user --install ;;
+        11) ask_autostart || true ;;
         0|q|Q) echo "Пока."; exit 0 ;;
         *) echo "Нет такого пункта." ;;
     esac

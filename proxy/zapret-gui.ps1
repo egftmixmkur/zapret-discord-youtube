@@ -29,6 +29,8 @@ $script:UtilsDir   = Join-Path $script:RootDir 'utils'
 $script:ResultsDir = Join-Path $script:UtilsDir 'test results'
 $script:ListsDir   = Join-Path $script:RootDir 'lists'
 $script:BindDir    = Join-Path $script:RootDir 'bin'
+$script:MacDir     = Join-Path $script:RootDir 'macos'
+$script:MacClientScript = Join-Path $script:MacDir 'zapret-proxy.command'
 $script:StrategyFile = Join-Path $script:ProxyDir 'zapret-strategy.txt'
 $script:TestScript = Join-Path $script:UtilsDir 'test zapret.ps1'
 $script:CurrentLog = ''
@@ -1160,7 +1162,7 @@ foreach ($nav in $navNames) {
     $navY += 50
 }
 
-[void](New-UILabel -Parent $sidebar -Text 'Версия 1.11.0' -X 18 -Y 520 -W 170 -H 20 `
+[void](New-UILabel -Parent $sidebar -Text 'Версия 1.12.0' -X 18 -Y 520 -W 170 -H 20 `
     -Size 8.5 -Color $script:Theme.Muted)
 [void](New-UILabel -Parent $sidebar -Text 'proxy + utils' -X 18 -Y 540 -W 170 -H 20 `
     -Size 8.5 -Color $script:Theme.Muted)
@@ -1296,7 +1298,8 @@ $script:OvInfoText.Text = @(
     '2. На телефоне/ТВ укажите HTTP-прокси: IP этого ПК, порт 8080 (или SOCKS5 :1080).',
     '3. Если сайт не открывается — откройте «Тесты» и запустите DPI-тесты, затем выберите',
     '   лучшую стратегию на вкладке «Zapret».',
-    '4. Все журналы и диагностика — на вкладках «Журналы» и «Инструменты».'
+    '4. Для Mac: автономный клиент в папке macos\ (локальный режим) или LAN через этот ПК.',
+    '5. Все журналы и диагностика — на вкладках «Журналы» и «Инструменты».'
 ) -join "`r`n"
 
 # Порядок докинга: Fill (0) прокладывается последним, затем верхние панели
@@ -1354,11 +1357,12 @@ $script:ConnBox = New-UITextBox -Parent $pxLeft -Text '' -X 16 -Y 288 -W 368 -H 
     -Multiline $true -ReadOnly $true
 $script:ConnBox.Font = New-Object System.Drawing.Font -ArgumentList @('Consolas', 8.5)
 $script:ConnBox.ScrollBars = [System.Windows.Forms.ScrollBars]::Vertical
-$script:PxHint = New-UILabel -Parent $pxLeft -Text '' -X 16 -Y 450 -W 368 -H 56 `
+$script:PxHint = New-UILabel -Parent $pxLeft -Text '' -X 16 -Y 450 -W 368 -H 72 `
     -Size 8.5 -Color $script:Theme.Muted
 $script:PxHint.Text = @(
     'Android/iOS: Wi-Fi → Прокси → Вручную → HTTP :8080.',
     'Windows: системный прокси или SOCKS5 :1080.',
+    'macOS: клиент в папке macos\ (локальный режим без Windows) — см. Инструменты.',
     'DoH уже встроен в прокси — на устройстве не нужен.'
 ) -join "`r`n"
 
@@ -1863,7 +1867,7 @@ function Update-LogView {
 $tl = $script:Tabs['tools']
 $tlTop = New-Object System.Windows.Forms.FlowLayoutPanel
 $tlTop.Dock = [System.Windows.Forms.DockStyle]::Top
-$tlTop.Height = 208
+$tlTop.Height = 256
 $tlTop.Padding = New-Object System.Windows.Forms.Padding -ArgumentList @(14, 12, 14, 0)
 $tlTop.WrapContents = $true
 $tl.Controls.Add($tlTop)
@@ -1913,6 +1917,12 @@ $tl.Controls.Add($tlTop)
         $bat = Join-Path $script:RootDir 'service.bat'
         Start-Process -FilePath 'cmd.exe' -ArgumentList @('/k', "`"$bat`" check_updates")
     })
+[void](New-UIButton -Parent $tlTop -Text 'Папка macOS' -X 0 -Y 0 -W 140 -H 40 `
+    -Back $script:Theme.Surface3 -OnClick { Open-MacFolder })
+[void](New-UIButton -Parent $tlTop -Text 'macOS: инструкция' -X 0 -Y 0 -W 170 -H 40 `
+    -Back $script:Theme.Surface3 -OnClick { Open-MacReadme })
+[void](New-UIButton -Parent $tlTop -Text 'macOS: релизы' -X 0 -Y 0 -W 150 -H 40 `
+    -Back $script:Theme.Cyan -Fore $script:Theme.Bg -OnClick { Open-MacRelease })
 $script:MinTrayCheck = New-UICheckBox -Parent $tlTop -Text 'Сворачивать в трей' `
     -X 0 -Y 4 -W 190 -Checked ([bool]$script:Settings.MinimizeToTray)
 $script:MinTrayCheck.Add_Click({
@@ -1940,6 +1950,42 @@ $tl.Controls.Add($script:DiagBox)
 $tl.Controls.SetChildIndex($script:DiagBox, 0)
 $tl.Controls.SetChildIndex($tlTop, 1)
 
+function Get-MacClientInfo {
+    if (-not (Test-Path -LiteralPath $script:MacClientScript)) { return $null }
+    $ver = $null
+    try {
+        foreach ($line in Get-Content -LiteralPath $script:MacClientScript -TotalCount 80 -ErrorAction Stop) {
+            if ($line -match '^\s*APP_VERSION="([^"]+)"') { $ver = $matches[1]; break }
+        }
+    } catch { }
+    [pscustomobject]@{
+        Path    = $script:MacClientScript
+        Dir     = $script:MacDir
+        Version = $ver
+    }
+}
+
+function Open-MacFolder {
+    if (Test-Path -LiteralPath $script:MacDir) {
+        Start-Process -FilePath 'explorer.exe' -ArgumentList "`"$script:MacDir`""
+    } else {
+        [Windows.Forms.MessageBox]::Show('Папка macos не найдена.', 'macOS', 'OK', 'Warning') | Out-Null
+    }
+}
+
+function Open-MacReadme {
+    $readme = Join-Path $script:MacDir 'README.md'
+    if (Test-Path -LiteralPath $readme) {
+        Start-Process -FilePath 'notepad.exe' -ArgumentList "`"$readme`""
+    } else {
+        [Windows.Forms.MessageBox]::Show('Файл macos\README.md не найден.', 'macOS', 'OK', 'Warning') | Out-Null
+    }
+}
+
+function Open-MacRelease {
+    Start-Process 'https://github.com/egftmixmkur/zapret-discord-youtube/releases?q=macOS&expanded=true'
+}
+
 function Add-Diag([string]$text, [string]$color = '#e6edf3') {
     $script:DiagBox.SelectionStart = $script:DiagBox.TextLength
     $script:DiagBox.SelectionColor = Color $color
@@ -1951,6 +1997,7 @@ function Run-Diagnostics {
     $script:DiagBox.Clear()
     Add-Diag '=== ДИАГНОСТИКА ZAPRET CONTROL ===' $script:Theme.Cyan
     Add-Diag "Время: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    Add-Diag "GUI: 1.12.0 (Windows), прокси: $($script:ProxyDir)"
     Add-Diag ''
     $ok = $script:Theme.Green
     $bad = $script:Theme.Red
@@ -1971,6 +2018,14 @@ function Run-Diagnostics {
     $strategies = Get-StrategyFiles
     if ($strategies.Count -gt 0) { Add-Diag "[OK] Стратегий найдено: $($strategies.Count)" $ok }
     else { Add-Diag '[X] Стратегии general*.bat не найдены' $bad }
+
+    $mac = Get-MacClientInfo
+    if ($mac) {
+        $mv = if ($mac.Version) { $mac.Version } else { 'не определена' }
+        Add-Diag "[OK] macOS-клиент: $mv ($($mac.Dir))" $ok
+    } else {
+        Add-Diag '[i] macOS-клиент не найден (папка macos)' $script:Theme.Muted
+    }
 
     $winws = @(Get-Process -Name 'winws' -ErrorAction SilentlyContinue)
     if ($winws.Count -gt 0) { Add-Diag "[OK] winws.exe запущен (PID $($winws[0].Id))" $ok }
@@ -2555,6 +2610,7 @@ if ($UiTest) {
         & $dumpTabs 'min.'
         $report | Set-Content -LiteralPath (Join-Path $script:ProxyDir 'ui-test.txt') -Encoding UTF8
         $form.Close()
+        [Environment]::Exit(0)
     })
 }
 

@@ -16,7 +16,7 @@ $ErrorActionPreference = 'Stop'
 
 $dir = $PSScriptRoot
 $root = Split-Path -Parent $dir
-$version = '1.11.0'
+$version = '1.12.0'
 $module = Join-Path $dir 'tools\ps2exe\ps2exe.psd1'
 $templatePath = Join-Path $dir 'installer\setup-template.ps1'
 $icon = Join-Path $dir 'zapret.ico'
@@ -89,6 +89,14 @@ try {
         'ZapretControlSetup.exe', 'ZapretControlSetup-test.exe', 'ZAPRET CONTROL.lnk',
         'build-installer.ps1', 'installer', 'tools', 'zapret-strategy.txt'
     )
+
+    # macOS-клиент (локальный обход DPI / LAN) и корневой README при наличии.
+    Copy-Filtered (Join-Path $root 'macos') (Join-Path $stage 'macos') @(
+        '__pycache__', '*.pyc', '*.tmp')
+    $rootReadme = Join-Path $root 'README.md'
+    if (Test-Path -LiteralPath $rootReadme) {
+        Copy-Item -LiteralPath $rootReadme -Destination (Join-Path $stage 'README.md') -Force
+    }
 
     # The uninstaller must always be present in the payload.
     Copy-Item -LiteralPath (Join-Path $dir 'uninstall.ps1') `

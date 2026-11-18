@@ -1,7 +1,7 @@
-# macOS-клиент ZAPRET CONTROL 0.2.0-beta
+# macOS-клиент ZAPRET CONTROL 0.3.0-beta
 
-**Версия клиента: 0.2.0-beta (бета).** Версии Windows-панели и macOS-клиента
-нумеруются раздельно: Windows — `1.11.0`, macOS — `0.2.0-beta`.
+**Версия клиента: 0.3.0-beta (бета).** Версии Windows-панели и macOS-клиента
+нумеруются раздельно: Windows — `1.12.0`, macOS — `0.3.0-beta`.
 Проверить версию: `./zapret-proxy.command --version`.
 
 Клиент работает на Mac самостоятельно: поднимает локальный прокси и включает
@@ -36,11 +36,14 @@ chmod +x zapret-proxy.command
 и сохранит настройки. Для изменения системных настроек потребуется пароль
 администратора macOS.
 
-Проверка и выключение:
+Проверка, перезапуск и выключение:
 
 ```bash
 ./zapret-proxy.command --status
 ./zapret-proxy.command --test
+./zapret-proxy.command --doctor      # диагностика
+./zapret-proxy.command --logs        # журнал локального прокси
+./zapret-proxy.command --restart     # перезапустить текущий режим
 ./zapret-proxy.command --off
 ```
 
@@ -103,21 +106,28 @@ chmod +x zapret-proxy.command
 1. **LAN** — указать IP Windows-ПК и включить прокси.
 2. **Локальный режим** — запустить обход на этом Mac.
 3. Выключить прокси (и остановить локальный прокси).
-4. Показать статус.
-5. Проверить связь.
-6. Выбрать сетевое подключение (Wi-Fi, Ethernet и т.д.).
-7. Установить клиент в `~/Applications`.
-8. Включить/выключить автозапуск.
+4. Перезапустить текущий режим.
+5. Показать статус.
+6. Проверить связь.
+7. Выбрать сетевое подключение (Wi-Fi, Ethernet и т.д.).
+8. Показать журнал локального прокси.
+9. Диагностика.
+10. Установить клиент в `~/Applications`.
+11. Включить/выключить автозапуск.
 
 ## Режим для скриптов
 
 ```bash
 ./zapret-proxy.command --local                   # локальный режим
 ./zapret-proxy.command --on 192.168.1.10         # LAN-режим
+./zapret-proxy.command --restart                 # перезапустить текущий режим
 ./zapret-proxy.command --off                     # выключить всё
 ./zapret-proxy.command --status                  # статус
+./zapret-proxy.command --doctor                  # диагностика
 ./zapret-proxy.command --test                    # проверка
+./zapret-proxy.command --logs [N]                # журнал (последние N строк)
 ./zapret-proxy.command --service "Ethernet"      # другое подключение
+./zapret-proxy.command --http-port 8080 --socks-port 1080  # порты
 ./zapret-proxy.command --install                 # установка
 ./zapret-proxy.command --uninstall               # удаление
 ./zapret-proxy.command --autostart on|off        # автозапуск
@@ -129,8 +139,9 @@ chmod +x zapret-proxy.command
 
 | Путь / параметр | Назначение |
 |---|---|
-| `127.0.0.1:8080` | HTTP/HTTPS-прокси (локальный режим) |
-| `127.0.0.1:1080` | SOCKS5-прокси (локальный режим) |
+| `127.0.0.1:8080` | HTTP/HTTPS-прокси (локальный режим, по умолчанию) |
+| `127.0.0.1:1080` | SOCKS5-прокси (локальный режим, по умолчанию) |
+| `--http-port N` / `--socks-port N` | пользовательские порты (сохраняются в конфиг) |
 | `~/Library/Application Support/ZapretControl/proxy.conf` | режим, адрес, подключение |
 | `~/Library/Application Support/ZapretControl/proxy.log` | журнал локального прокси |
 | `~/Library/Application Support/ZapretControl/proxy.pid` | pid локального прокси |
@@ -166,12 +177,13 @@ chmod +x zapret-proxy.command
 
 ```bash
 cd macos/tests
-./run-tests.sh          # 18 сценариев, 74 проверки
+./run-tests.sh          # 21 сценарий, 91 проверка
 ```
 
 Эмулятор использует заглушки `uname`, `id`, `sudo`, `networksetup`, `dscl`,
 `stat`, `curl`, `perl` и `launchctl`; системные настройки не меняются.
 Проверяются: справка, версия, LAN-включение, статус, `--test`, другое
 подключение, ошибки адреса, меню, локальный режим, остановка, установка,
-автозапуск, удаление и `desync-proxy.pl --selftest`. Реальный `networksetup`,
-LaunchAgent и сеть проверяются только на Mac.
+автозапуск, удаление, `--doctor`, `--logs`, `--restart`, пользовательские порты
+и `desync-proxy.pl --selftest`. Реальный `networksetup`, LaunchAgent и сеть
+проверяются только на Mac.

@@ -125,7 +125,7 @@ out_has "Прокси включён для «Wi-Fi»" && ok "включил п�
 state_has "setwebproxy|Wi-Fi|192.168.1.99|8080|on" && ok "применил введённый IP" || bad "IP не применился"
 out_has "IP или имя Windows-ПК" && ok "спросил адрес" || bad "не спросил адрес"
 conf_has 'HOST="192.168.1.99"' && ok "сохранил адрес" || bad "не сохранил"
-out_has "0.2.0-beta" && ok "показывает версию с пометкой бета" || bad "нет версии в шапке"
+out_has "0.3.0-beta" && ok "показывает версию с пометкой бета" || bad "нет версии в шапке"
 
 # --- 10. под root sudo не нужен ---
 echo "10) --off под root"
@@ -139,7 +139,7 @@ echo "11) --version"
 setup 501
 run --version
 [ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
-out_has "0.2.0-beta" && ok "версия клиента 0.2.0-beta" || bad "нет версии"
+out_has "0.3.0-beta" && ok "версия клиента 0.3.0-beta" || bad "нет версии"
 [ ! -s "$SIM_LOG" ] && ok "не трогает систему" || bad "вызвал $(head -1 "$SIM_LOG")"
 
 # --- 12. локальный режим: прокси на этом Mac ---
@@ -213,6 +213,47 @@ if [ -x /usr/bin/perl ]; then
 else
     ok "perl недоступен — пропущено"
 fi
+
+# --- 19. диагностика и журнал ---
+echo "19) --doctor и --logs"
+setup 501
+run --local
+run --doctor
+[ "$RC" -eq 0 ] && ok "doctor exit 0" || bad "doctor exit $RC"
+out_has "диагностика" && ok "показывает заголовок" || bad "нет заголовка"
+out_has "perl" && ok "проверяет perl" || bad "нет проверки perl"
+out_has "локальный прокси работает" && ok "видит запущенный прокси" || bad "не видит прокси"
+echo "log line 1" >>"$SIM_HOME/Library/Application Support/ZapretControl/proxy.log"
+run --logs 20
+[ "$RC" -eq 0 ] && ok "logs exit 0" || bad "logs exit $RC"
+out_has "log line 1" && ok "читает журнал" || bad "журнал не прочитан"
+run --off
+
+# --- 20. перезапуск локального режима ---
+echo "20) --restart (local)"
+setup 501
+run --local
+oldpid=$(cat "$SIM_HOME/Library/Application Support/ZapretControl/proxy.pid" 2>/dev/null)
+run --restart
+[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+log_has "perl " && ok "перезапустил прокси" || bad "прокси не перезапущен"
+state_has "setwebproxy|Wi-Fi|127.0.0.1|8080|on" && ok "системный прокси на месте" || bad "прокси сброшен"
+newpid=$(cat "$SIM_HOME/Library/Application Support/ZapretControl/proxy.pid" 2>/dev/null)
+[ -n "${newpid:-}" ] && kill -0 "$newpid" 2>/dev/null && ok "новый процесс жив" || bad "процесс не жив"
+run --off
+
+# --- 21. пользовательские порты ---
+echo "21) --local с --http-port/--socks-port"
+setup 501
+run --local --http-port 18080 --socks-port 11080
+[ "$RC" -eq 0 ] && ok "exit 0" || bad "exit $RC"
+state_has "setwebproxy|Wi-Fi|127.0.0.1|18080|on" && ok "HTTP на 18080" || bad "HTTP порт не применён"
+state_has "setsocksfirewallproxy|Wi-Fi|127.0.0.1|11080|on" && ok "SOCKS на 11080" || bad "SOCKS порт не применён"
+conf_has 'HTTP_PORT="18080"' && ok "HTTP порт сохранён" || bad "порт не сохранён"
+conf_has 'SOCKS_PORT="11080"' && ok "SOCKS порт сохранён" || bad "порт не сохранён"
+log_has "--http-port 18080" && ok "perl получил --http-port" || bad "perl без http-port"
+log_has "--socks-port 11080" && ok "perl получил --socks-port" || bad "perl без socks-port"
+run --off
 
 echo
 echo "Итого: $PASS успешно, $FAIL провалов"

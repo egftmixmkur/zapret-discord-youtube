@@ -24,7 +24,7 @@
 | `proxy\ZapretControl.exe` | собранная панель управления (UAC при запуске) |
 | `proxy\ZapretControlSetup.exe` | установщик «всё в одном» (~2,2 МБ, внутри весь пакет) |
 | `utils\test zapret.ps1` | тесты стратегий и `-AutoApply` для автоподбора |
-| `macos\` | клиент для macOS (0.2.0-beta): локальный обход DPI на Mac или LAN-режим через Windows-ПК |
+| `macos\` | клиент для macOS (0.3.0-beta): локальный обход DPI на Mac, установка/автозапуск, диагностика или LAN-режим |
 
 ## Быстрый старт
 
@@ -54,7 +54,7 @@ powershell -ExecutionPolicy Bypass -File proxy\build-installer.ps1
 
 ## macOS
 
-Версии раздельные: Windows-панель — `1.11.0`, macOS-клиент — `0.2.0-beta`.
+Версии раздельные: Windows-панель — `1.12.0`, macOS-клиент — `0.3.0-beta`.
 
 Сам zapret (`winws.exe` + WinDivert) работает только на Windows, поэтому
 оригинальный `winws` на Mac не запускается. В папке [`macos/`](macos/README.md)
@@ -66,6 +66,7 @@ Windows-ПК не нужен. Также есть LAN-режим через пр
 cd macos
 chmod +x zapret-proxy.command
 ./zapret-proxy.command --local          # локальный режим на этом Mac
+./zapret-proxy.command --status         # статус, --doctor / --logs / --restart
 ./zapret-proxy.command --install        # установка в ~/Applications
 ./zapret-proxy.command --autostart on   # автозапуск (LaunchAgent)
 ./zapret-proxy.command --off            # выключить
