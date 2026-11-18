@@ -1,0 +1,52 @@
+name: Test macOS client
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'macos/**'
+      - '.github/workflows/test-macos.yml'
+  pull_request:
+    paths:
+      - 'macos/**'
+      - '.github/workflows/test-macos.yml'
+  workflow_dispatch:
+
+jobs:
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show macOS environment
+        run: |
+          sw_vers
+          uname -a
+          perl -v | head -n 2 || true
+          bash --version | head -n 1 || true
+
+      - name: Syntax checks (bash)
+        run: |
+          bash -n macos/zapret-proxy.command
+          bash -n macos/tests/run-tests.sh
+          bash -n macos/tests/stubs/curl
+          bash -n macos/tests/stubs/dscl
+          bash -n macos/tests/stubs/id
+          bash -n macos/tests/stubs/launchctl
+          bash -n macos/tests/stubs/networksetup
+          bash -n macos/tests/stubs/perl
+          bash -n macos/tests/stubs/stat
+          bash -n macos/tests/stubs/sudo
+          bash -n macos/tests/stubs/uname
+
+      - name: Syntax and self-test (Perl proxy)
+        run: |
+          perl -c macos/lib/desync-proxy.pl
+          perl macos/lib/desync-proxy.pl --selftest
+
+      - name: Run macOS client emulator
+        run: |
+          chmod +x macos/tests/run-tests.sh macos/zapret-proxy.command macos/tests/stubs/* || true
+          cd macos/tests
+          bash run-tests.sh
