@@ -31,7 +31,7 @@ $script:ListsDir   = Join-Path $script:RootDir 'lists'
 $script:BindDir    = Join-Path $script:RootDir 'bin'
 $script:MacDir     = Join-Path $script:RootDir 'macos'
 $script:MacClientScript = Join-Path $script:MacDir 'zapret-proxy.command'
-$script:AppVersion = '1.12.9'
+$script:AppVersion = '1.12.10'
 $script:UpdateRepo = 'egftmixmkur/zapret-discord-youtube'
 $script:StrategyFile = Join-Path $script:ProxyDir 'zapret-strategy.txt'
 $script:TestScript = Join-Path $script:UtilsDir 'test zapret.ps1'
@@ -72,30 +72,31 @@ function Color([string]$hex) {
 }
 
 $script:Theme = @{
-    Bg          = '#0a0e14'
-    BgDeep      = '#070a0f'
-    Surface     = '#121924'
-    Surface2    = '#182233'
-    Surface3    = '#1f2c40'
-    SurfaceHi   = '#243247'
-    Border      = '#243247'
-    BorderLight = '#30445e'
-    Shadow      = '#05080c'
-    Text        = '#eaf1ff'
-    Muted       = '#97a8bf'
-    Green       = '#2ecc71'
-    GreenDark   = '#1f8f4e'
-    Red         = '#ff5c5c'
-    RedDark     = '#b33a3a'
-    Yellow      = '#ffb020'
-    YellowDark  = '#9a6a10'
-    Blue        = '#5b7cfa'
-    BlueDark    = '#334fb8'
-    Cyan        = '#22c1ee'
-    CyanDark    = '#147a96'
-    Accent      = '#6d5efc'
-    AccentDark  = '#4337a8'
+    Bg          = '#070b12'
+    BgDeep      = '#04070c'
+    Surface     = '#101827'
+    Surface2    = '#162236'
+    Surface3    = '#1d2d46'
+    SurfaceHi   = '#243755'
+    Border      = '#22324a'
+    BorderLight = '#355070'
+    Shadow      = '#020407'
+    Text        = '#eef5ff'
+    Muted       = '#91a4bf'
+    Green       = '#34d399'
+    GreenDark   = '#15935f'
+    Red         = '#fb7185'
+    RedDark     = '#b63b52'
+    Yellow      = '#fbbf24'
+    YellowDark  = '#9a7010'
+    Blue        = '#60a5fa'
+    BlueDark    = '#2f63b8'
+    Cyan        = '#22d3ee'
+    CyanDark    = '#0f8799'
+    Accent      = '#8b5cf6'
+    AccentDark  = '#5b35b8'
     White       = '#ffffff'
+    Glow        = '#1d4ed8'
 }
 
 # --------------------------------------------------------------------------
@@ -1129,7 +1130,7 @@ Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
     try { $form.Close() } catch { [Environment]::Exit(0) }
 }
 
-function Invoke-AppUpdateCheck([bool]$silent = $false) {
+function Invoke-AppUpdateCheck([bool]$silent = $false, [bool]$autoInstall = $false) {
     $current = [string](Get-InstalledZapretControlVersion)
     $currentN = Get-NormalizedVersion $current
     try { Add-Diag "Проверка обновлений ZAPRET CONTROL (текущая: $current, репозиторий: $($script:UpdateRepo))..." $script:Theme.Muted } catch { }
@@ -1162,6 +1163,29 @@ function Invoke-AppUpdateCheck([bool]$silent = $false) {
     try { Add-Diag "Доступно обновление: $($release.Tag) (установлено: $current)" $script:Theme.Yellow } catch { }
     $notes = [string]$release.Body
     if ($notes.Length -gt 700) { $notes = $notes.Substring(0, 700) + '...' }
+
+    if ($autoInstall) {
+        try {
+            if ($script:TrayIcon) {
+                $script:TrayIcon.ShowBalloonTip(8000, 'ZAPRET CONTROL', "Найдено обновление $($release.Tag). Автоматическая загрузка и установка...", [System.Windows.Forms.ToolTipIcon]::Info)
+            }
+        } catch { }
+        try {
+            if (-not $release.SetupUrl) { try { Start-Process $release.Url } catch { }; return }
+            Start-ZapretControlSelfUpdate -setupUrl $release.SetupUrl
+        } catch {
+            $em = $_.Exception.Message
+            try { Add-Diag "Ошибка автообновления: $em" $script:Theme.Red } catch { }
+            if (-not $silent) {
+                $open = [Windows.Forms.MessageBox]::Show(
+                    "Не удалось установить обновление автоматически:`n$em`n`nОткрыть страницу релиза?",
+                    'Обновления ZAPRET CONTROL', [Windows.Forms.MessageBoxButtons]::YesNo, [Windows.Forms.MessageBoxIcon]::Warning)
+                if ($open -eq [Windows.Forms.DialogResult]::Yes) { try { Start-Process $release.Url } catch { } }
+            }
+        }
+        return
+    }
+
     $prompt = "Доступна новая версия: $($release.Tag)`nУстановлена: $current`n`n$notes`n`nСкачать и установить сейчас?"
     $answer = [Windows.Forms.MessageBox]::Show($prompt, 'Обновление ZAPRET CONTROL',
         [Windows.Forms.MessageBoxButtons]::YesNoCancel, [Windows.Forms.MessageBoxIcon]::Information)
@@ -1260,19 +1284,17 @@ try {
             $latestN = Get-NormalizedVersion ([string]$obj.version)
             if ($latestN -le $currentN) { return }
             $script:LatestAppUpdate = $obj
-            try { Add-Diag "Доступно обновление ZAPRET CONTROL: $($obj.tag) (установлено: $current)" $script:Theme.Yellow } catch { }
-            try { if ($script:TrayIcon) { $script:TrayIcon.ShowBalloonTip(6000, 'ZAPRET CONTROL', "Доступно обновление $($obj.tag). Откройте «Инструменты» → «Обновить ZAPRET CONTROL».", [System.Windows.Forms.ToolTipIcon]::Info) } } catch { }
-            $notes = [string]$obj.body
-            if ($notes.Length -gt 500) { $notes = $notes.Substring(0, 500) + '...' }
-            $answer = [Windows.Forms.MessageBox]::Show(
-                "Доступна новая версия: $($obj.tag)`nУстановлена: $current`n`n$notes`n`nУстановить сейчас?",
-                'Обновление ZAPRET CONTROL', [Windows.Forms.MessageBoxButtons]::YesNo, [Windows.Forms.MessageBoxIcon]::Information)
-            if ($answer -eq [Windows.Forms.DialogResult]::Yes) {
+            try { Add-Diag "Доступно обновление ZAPRET CONTROL: $($obj.tag) (установлено: $current). Автоматическая установка..." $script:Theme.Yellow } catch { }
+            try { if ($script:TrayIcon) { $script:TrayIcon.ShowBalloonTip(8000, 'ZAPRET CONTROL', "Найдено обновление $($obj.tag). Скачивание и установка автоматически...", [System.Windows.Forms.ToolTipIcon]::Info) } } catch { }
+            try {
                 if ($obj.setup) {
                     Start-ZapretControlSelfUpdate -setupUrl ([string]$obj.setup)
-                } else {
+                } elseif ($obj.url) {
                     try { Start-Process ([string]$obj.url) } catch { }
                 }
+            } catch {
+                $em = $_.Exception.Message
+                try { Add-Diag "Ошибка автообновления: $em" $script:Theme.Red } catch { }
             }
         } catch { }
     }.GetNewClosure())
@@ -1382,13 +1404,13 @@ function New-UIButton {
     $base = Color $Back
     $button.BackColor = $base
     $button.ForeColor = Color $Fore
-    $r = [Math]::Min(255, $base.R + 18); $g = [Math]::Min(255, $base.G + 18); $b = [Math]::Min(255, $base.B + 18)
-    $r2 = [Math]::Max(0, $base.R - 20); $g2 = [Math]::Max(0, $base.G - 20); $b2 = [Math]::Max(0, $base.B - 20)
-    $rb = [Math]::Min(255, $base.R + 35); $gb = [Math]::Min(255, $base.G + 35); $bb = [Math]::Min(255, $base.B + 35)
+    $r = [Math]::Min(255, $base.R + 22); $g = [Math]::Min(255, $base.G + 22); $b = [Math]::Min(255, $base.B + 22)
+    $r2 = [Math]::Max(0, $base.R - 18); $g2 = [Math]::Max(0, $base.G - 18); $b2 = [Math]::Max(0, $base.B - 18)
+    $rb = [Math]::Min(255, $base.R + 40); $gb = [Math]::Min(255, $base.G + 40); $bb = [Math]::Min(255, $base.B + 40)
     $button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb($r, $g, $b)
     $button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb($r2, $g2, $b2)
     $button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb($rb, $gb, $bb)
-    $button.Font = New-Object System.Drawing.Font -ArgumentList @('Segoe UI Semibold', 9.25)
+    $button.Font = New-Object System.Drawing.Font -ArgumentList @('Segoe UI Semibold', 9.5)
     $button.Cursor = [System.Windows.Forms.Cursors]::Hand
     $button.UseVisualStyleBackColor = $false
     if ($OnClick) { $button.Add_Click($OnClick) }
@@ -1411,6 +1433,19 @@ function New-UICard {
             $h = [int]$rect.Height
             if ($w -le 2 -or $h -le 2) { return }
             $e.Graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+            # soft fill
+            $fillRect = New-Object System.Drawing.Rectangle(1, 1, [int][Math]::Max(1, ($w - 2)), [int][Math]::Max(1, ($h - 2)))
+            $fb = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+                $fillRect, (Color $script:Theme.Surface), (Color $script:Theme.BgDeep),
+                [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
+            try { $e.Graphics.FillRectangle($fb, $fillRect) } finally { $fb.Dispose() }
+            # top accent stripe
+            $stripe = New-Object System.Drawing.Rectangle(1, 1, [int][Math]::Max(1, ($w - 2)), 3)
+            $sb = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+                $stripe, (Color $script:Theme.Accent), (Color $script:Theme.Cyan),
+                [System.Drawing.Drawing2D.LinearGradientMode]::Horizontal)
+            try { $e.Graphics.FillRectangle($sb, $stripe) } finally { $sb.Dispose() }
+            # border
             $top = Color $script:Theme.BorderLight
             $bot = Color $script:Theme.Border
             $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
@@ -1422,10 +1457,6 @@ function New-UICard {
                     $e.Graphics.DrawRectangle($pen, $r)
                 } finally { $pen.Dispose() }
             } finally { $brush.Dispose() }
-            $hi = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(40, 255, 255, 255), 1)
-            try { $e.Graphics.DrawLine($hi, 1, 1, [int][Math]::Max(1, ($w - 2)), 1) } finally { $hi.Dispose() }
-            $sh = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(90, 0, 0, 0), 1)
-            try { $e.Graphics.DrawLine($sh, 1, [int]($h - 1), [int]($w - 1), [int]($h - 1)) } finally { $sh.Dispose() }
         } catch { }
     })
     $Parent.Controls.Add($panel)
@@ -1530,6 +1561,7 @@ function Read-GuiSettings {
         if ($obj.Tab) { $script:Settings.Tab = [string]$obj.Tab }
         $script:Settings.MinimizeToTray = [bool]$obj.MinimizeToTray
         if ($null -ne $obj.AutoCheckAppUpdates) { $script:Settings.AutoCheckAppUpdates = [bool]$obj.AutoCheckAppUpdates } else { $script:Settings.AutoCheckAppUpdates = $true }
+
 
         $width = if ($null -ne $obj.Width) { [int]$obj.Width } else { 0 }
         $height = if ($null -ne $obj.Height) { [int]$obj.Height } else { 0 }
@@ -1664,18 +1696,19 @@ $header.Add_Paint({
         $w = [int]$rect.Width
         $h = [int]$rect.Height
         if ($w -le 0 -or $h -le 0) { return }
-        $c1 = Color $script:Theme.SurfaceHi
-        $c2 = Color $script:Theme.BgDeep
+        $c1 = [System.Drawing.Color]::FromArgb(255, 18, 30, 50)
+        $c2 = [System.Drawing.Color]::FromArgb(255, 7, 11, 18)
         $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
             $rect, $c1, $c2, [System.Drawing.Drawing2D.LinearGradientMode]::Horizontal)
         try { $e.Graphics.FillRectangle($brush, $rect) } finally { $brush.Dispose() }
+        # accent glow strip at bottom
+        $accentRect = New-Object System.Drawing.Rectangle(0, [int][Math]::Max(0, ($h - 3)), $w, 3)
+        $ab = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+            $accentRect, (Color $script:Theme.Accent), (Color $script:Theme.Cyan),
+            [System.Drawing.Drawing2D.LinearGradientMode]::Horizontal)
+        try { $e.Graphics.FillRectangle($ab, $accentRect) } finally { $ab.Dispose() }
         $line = New-Object System.Drawing.Pen((Color $script:Theme.BorderLight), 1)
         try { $e.Graphics.DrawLine($line, 0, [int]($h - 1), $w, [int]($h - 1)) } finally { $line.Dispose() }
-        $glow = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(55, 109, 94, 252))
-        try {
-            $gy = [int][Math]::Max(0, ($h - 3))
-            $e.Graphics.FillRectangle($glow, 0, $gy, $w, 2)
-        } finally { $glow.Dispose() }
     } catch { }
 })
 $form.Controls.Add($header)
@@ -1697,10 +1730,10 @@ $accent.Add_Paint({
 })
 $header.Controls.Add($accent)
 
-[void](New-UILabel -Parent $header -Text 'ZAPRET CONTROL' -X 28 -Y 16 -W 460 -H 38 `
-    -Size 22 -Color $script:Theme.Text -Bold $true)
-[void](New-UILabel -Parent $header -Text 'LAN-прокси · DPI-обход · тесты стратегий · панель управления' `
-    -X 30 -Y 56 -W 560 -H 24 -Size 10.5 -Color $script:Theme.Muted)
+[void](New-UILabel -Parent $header -Text 'ZAPRET CONTROL' -X 28 -Y 14 -W 460 -H 40 `
+    -Size 22 -Color $script:Theme.White -Bold $true)
+[void](New-UILabel -Parent $header -Text 'LAN-прокси · DPI-обход · тесты стратегий · автообновление' `
+    -X 30 -Y 54 -W 600 -H 24 -Size 10.5 -Color $script:Theme.Cyan)
 
 $script:PillAdmin = New-UILabel -Parent $header -Text 'АДМИН: ...' -X 840 -Y 26 -W 110 -H 30 `
     -Size 9 -Color $script:Theme.White -Bold $true -Align 'MiddleCenter'
@@ -1733,23 +1766,24 @@ $sidebar.Add_Paint({
         $w = [int]$rect.Width
         $h = [int]$rect.Height
         if ($w -le 0 -or $h -le 0) { return }
+        $c1 = [System.Drawing.Color]::FromArgb(255, 10, 16, 28)
+        $c2 = [System.Drawing.Color]::FromArgb(255, 16, 24, 39)
         $b = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-            $rect, (Color $script:Theme.BgDeep), (Color $script:Theme.Surface),
-            [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
+            $rect, $c1, $c2, [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
         try { $e.Graphics.FillRectangle($b, $rect) } finally { $b.Dispose() }
-        $pen = New-Object System.Drawing.Pen((Color $script:Theme.Border), 1)
+        $pen = New-Object System.Drawing.Pen((Color $script:Theme.BorderLight), 1)
         try { $e.Graphics.DrawLine($pen, [int]($w - 1), 0, [int]($w - 1), $h) } finally { $pen.Dispose() }
     } catch { }
 })
 $form.Controls.Add($sidebar)
 
 $navNames = @(
-    @{ Key = 'overview'; Text = '  Обзор' },
-    @{ Key = 'proxy';    Text = '  Прокси' },
-    @{ Key = 'zapret';   Text = '  Zapret' },
-    @{ Key = 'tests';    Text = '  Тесты' },
-    @{ Key = 'logs';     Text = '  Журналы' },
-    @{ Key = 'tools';    Text = '  Инструменты' }
+    @{ Key = 'overview'; Text = '  ◆  Обзор' },
+    @{ Key = 'proxy';    Text = '  ◈  Прокси' },
+    @{ Key = 'zapret';   Text = '  ◉  Zapret' },
+    @{ Key = 'tests';    Text = '  ◇  Тесты' },
+    @{ Key = 'logs';     Text = '  ▤  Журналы' },
+    @{ Key = 'tools';    Text = '  ✦  Инструменты' }
 )
 $script:NavButtons = @{}
 $script:NavAccents = @{}
@@ -1774,11 +1808,11 @@ foreach ($nav in $navNames) {
     $navY += 52
 }
 
-$sideVerCard = New-UICard -Parent $sidebar -X 14 -Y 514 -W 186 -H 56
-[void](New-UILabel -Parent $sideVerCard -Text 'ZAPRET CONTROL' -X 12 -Y 8 -W 160 -H 18 `
-    -Size 8 -Color $script:Theme.Muted -Bold $true)
-[void](New-UILabel -Parent $sideVerCard -Text 'Версия 1.12.9' -X 12 -Y 28 -W 160 -H 20 `
-    -Size 10 -Color $script:Theme.Text -Bold $true)
+$sideVerCard = New-UICard -Parent $sidebar -X 14 -Y 504 -W 186 -H 66
+[void](New-UILabel -Parent $sideVerCard -Text 'ZAPRET CONTROL' -X 12 -Y 10 -W 160 -H 18 `
+    -Size 8 -Color $script:Theme.Accent -Bold $true)
+[void](New-UILabel -Parent $sideVerCard -Text 'Версия 1.12.10' -X 12 -Y 30 -W 160 -H 22 `
+    -Size 10.5 -Color $script:Theme.White -Bold $true)
 
 # --- status bar ---
 $statusBar = New-Object System.Windows.Forms.Panel
@@ -1790,7 +1824,13 @@ $statusBar.Add_Paint({
     try {
         $rect = $sender.ClientRectangle
         $w = [int]$rect.Width
-        $pen = New-Object System.Drawing.Pen((Color $script:Theme.Border), 1)
+        $h = [int]$rect.Height
+        if ($w -le 0 -or $h -le 0) { return }
+        $b = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+            $rect, (Color $script:Theme.Surface2), (Color $script:Theme.BgDeep),
+            [System.Drawing.Drawing2D.LinearGradientMode]::Horizontal)
+        try { $e.Graphics.FillRectangle($b, $rect) } finally { $b.Dispose() }
+        $pen = New-Object System.Drawing.Pen((Color $script:Theme.BorderLight), 1)
         try { $e.Graphics.DrawLine($pen, 0, 0, $w, 0) } finally { $pen.Dispose() }
     } catch { }
 })
@@ -1827,9 +1867,9 @@ function Switch-Tab([string]$key) {
         if ($script:NavButtons.ContainsKey($k)) {
             if ($k -eq $key) {
                 $script:NavButtons[$k].BackColor = Color $script:Theme.SurfaceHi
-                $script:NavButtons[$k].ForeColor = Color $script:Theme.Text
+                $script:NavButtons[$k].ForeColor = Color $script:Theme.White
                 $script:NavButtons[$k].FlatAppearance.BorderSize = 1
-                $script:NavButtons[$k].FlatAppearance.BorderColor = Color $script:Theme.BorderLight
+                $script:NavButtons[$k].FlatAppearance.BorderColor = Color $script:Theme.Accent
             } else {
                 $script:NavButtons[$k].BackColor = Color $script:Theme.Surface
                 $script:NavButtons[$k].ForeColor = Color $script:Theme.Muted
@@ -1839,7 +1879,7 @@ function Switch-Tab([string]$key) {
         }
         if ($script:NavAccents -and $script:NavAccents.ContainsKey($k)) {
             $script:NavAccents[$k].Visible = ($k -eq $key)
-            $script:NavAccents[$k].BackColor = Color $script:Theme.Green
+            $script:NavAccents[$k].BackColor = Color $script:Theme.Accent
         }
     }
     if ($key -eq 'logs') { Update-LogView }
@@ -2572,7 +2612,9 @@ $tl.Controls.Add($tlTop)
     -Back $script:Theme.Surface3 -OnClick {
         Start-Process -FilePath 'explorer.exe' -ArgumentList "`"$script:ProxyDir`""
     })
-[void](New-UIButton -Parent $tlTop -Text 'Обновления zapret' -X 0 -Y 0 -W 180 -H 40 `
+[void](New-UIButton -Parent $tlTop -Text 'Обновить ZAPRET CONTROL' -X 0 -Y 0 -W 230 -H 40 `
+    -Back $script:Theme.Accent -OnClick { Invoke-AppUpdateCheck -silent $false -autoInstall $false })
+[void](New-UIButton -Parent $tlTop -Text 'Обновления zapret (старое)' -X 0 -Y 0 -W 210 -H 40 `
     -Back $script:Theme.Surface3 -OnClick {
         $bat = Join-Path $script:RootDir 'service.bat'
         Start-Process -FilePath 'cmd.exe' -ArgumentList @('/k', "`"$bat`" check_updates")
@@ -2663,7 +2705,7 @@ function Run-Diagnostics {
     $script:DiagBox.Clear()
     Add-Diag '=== ДИАГНОСТИКА ZAPRET CONTROL ===' $script:Theme.Cyan
     Add-Diag "Время: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-    Add-Diag "GUI: 1.12.9 (Windows), прокси: $($script:ProxyDir)"
+    Add-Diag "GUI: 1.12.10 (Windows), прокси: $($script:ProxyDir)"
     Add-Diag ''
     $ok = $script:Theme.Green
     $bad = $script:Theme.Red
