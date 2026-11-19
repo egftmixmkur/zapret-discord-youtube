@@ -49,8 +49,11 @@ $script:ConnStarted = [DateTime]::MinValue
 $script:LastConnSummary = ''
 $script:TestWasRunning = $false
 $script:LastResultStamp = ''
+
 $script:TestChartData = $null
+
 $script:TestChart = $null
+
 $script:OverviewChart = $null
 
 function Test-Admin {
@@ -305,22 +308,25 @@ function Get-TestAnalytics($file) {
     try {
         foreach ($line in Get-Content -LiteralPath $file.FullName -ErrorAction Stop) {
             if ($line -match '^\s*(.+?)\s*:\s*OK:\s*(\d+)\s*,\s*FAIL:\s*(\d+)\s*,\s*UNSUP:\s*(\d+)\s*,\s*BLOCKED:\s*(\d+)\s*$') {
-                $ok = [int]$matches[2]; $fail = [int]$matches[3]
-                $unsup = [int]$matches[4]; $blocked = [int]$matches[5]
-                $total = $ok + $fail + $unsup + $blocked
+                $ok = [int]$matches[2]
+                $fail = [int]$matches[3]
+                $unsup = [int]$matches[4]
+                $blocked = [int]$matches[5]
+                $total = [int]($ok + $fail + $unsup + $blocked)
+                $score = [int]($ok - $fail)
                 $items.Add([pscustomobject]@{
-                    Name    = $matches[1].Trim()
+                    Name    = ([string]$matches[1]).Trim()
                     OK      = $ok
                     FAIL    = $fail
                     UNSUP   = $unsup
                     BLOCKED = $blocked
                     Total   = $total
-                    Score   = ($ok - $fail)
+                    Score   = $score
                 })
             }
         }
     } catch { }
-    $sorted = @($items | Sort-Object @{Expression={$_.Score};Descending=$true}, @{Expression={$_.OK};Descending=$true})
+    $sorted = @($items.ToArray() | Sort-Object @{Expression={[int]$_.Score};Descending=$true}, @{Expression={[int]$_.OK};Descending=$true})
     $result.Items = $sorted
     return $result
 }
@@ -338,111 +344,196 @@ function Update-TestCharts {
 
 function Draw-ResultsChart {
     param($sender, $e, $data, [int]$maxItems = 10, [bool]$compact = $false)
-    $g = $e.Graphics
-    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
-    $rect = $sender.ClientRectangle
-    $bg = New-Object System.Drawing.SolidBrush((Color $script:Theme.Surface))
-    $g.FillRectangle($bg, $rect); $bg.Dispose()
+    $g = $null
+    $bg = $null; $fontTitle = $null; $fontSmall = $null; $brushText = $null; $brushMuted = $null
+    try {
+        $g = $e.Graphics
+        $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
+        $rect = $sender.ClientRectangle
 
-    $padL = if ($compact) { 10 } else { 14 }
-    $padR = if ($compact) { 10 } else { 14 }
-    $padT = if ($compact) { 10 } else { 12 }
-    $padB = if ($compact) { 10 } else { 28 }
-    $innerW = [Math]::Max(40, $rect.Width - $padL - $padR)
-    $innerH = [Math]::Max(20, $rect.Height - $padT - $padB)
+        $bg = New-Object System.Drawing.SolidBrush((Color $script:Theme.Surface))
+        $g.FillRectangle($bg, $rect)
 
-    $fontTitle = New-Object System.Drawing.Font('Segoe UI Semibold', $(if ($compact) { 8.5 } else { 9.5 }))
-    $fontSmall = New-Object System.Drawing.Font('Segoe UI', $(if ($compact) { 7.5 } else { 8.25 }))
-    $brushText = New-Object System.Drawing.SolidBrush((Color $script:Theme.Text))
-    $brushMuted = New-Object System.Drawing.SolidBrush((Color $script:Theme.Muted))
+        $isCompact = [bool]$compact
+        $maxItemsN = [int]$maxItems
+        $padL = [int]($(if ($isCompact) { 10 } else { 14 }))
+        $padR = [int]($(if ($isCompact) { 10 } else { 14 }))
+        $padT = [int]($(if ($isCompact) { 10 } else { 12 }))
+        $padB = [int]($(if ($isCompact) { 10 } else { 28 }))
 
-    $items = @()
-    $best = ''
-    if ($data -and $data.Items) { $items = @($data.Items | Select-Object -First $maxItems); $best = $data.Best }
+        $rw = [int]$rect.Width
+        $rh = [int]$rect.Height
+        $innerW = [int][Math]::Max(40, ($rw - $padL - $padR))
+        $innerH = [int][Math]::Max(20, ($rh - $padT - $padB))
 
-    if ($items.Count -eq 0) {
-        $msg = 'График: нет данных — запустите тесты стратегий (вкладка «Тесты»)'
-        $sf = New-Object System.Drawing.StringFormat
-        $sf.Alignment = [System.Drawing.StringAlignment]::Center
-        $sf.LineAlignment = [System.Drawing.StringAlignment]::Center
-        $msgRect = New-Object System.Drawing.RectangleF(0, 0, $rect.Width, $rect.Height)
-        $g.DrawString($msg, $fontTitle, $brushMuted, $msgRect, $sf)
-        $sf.Dispose()
-    } else {
-        $maxTotal = 1
-        foreach ($it in $items) { if ($it.Total -gt $maxTotal) { $maxTotal = $it.Total } }
-        $title = 'График результатов (топ стратегий)'
-        $g.DrawString($title, $fontTitle, $brushText, [single]$padL, [single]($padT - 2))
-        $y = $padT + 22
-        $rowH = [Math]::Max($(if ($compact) { 16 } else { 20 }), [Math]::Min($(if ($compact) { 22 } else { 28 }), [int](($innerH - 24) / [Math]::Max(1,$items.Count))))
-        $labelW = [int]([Math]::Min([Math]::Max(120, $innerW * 0.34), 260))
-        $barX = $padL + $labelW + 8
-        $barW = [Math]::Max(40, $rect.Width - $barX - $padR - $(if ($compact) { 0 } else { 80 }))
-        $barH = [Math]::Max(8, $rowH - 8)
+        $titleSize = [double]($(if ($isCompact) { 8.5 } else { 9.5 }))
+        $smallSize = [double]($(if ($isCompact) { 7.5 } else { 8.25 }))
+        $fontTitle = New-Object System.Drawing.Font('Segoe UI Semibold', $titleSize)
+        $fontSmall = New-Object System.Drawing.Font('Segoe UI', $smallSize)
+        $brushText = New-Object System.Drawing.SolidBrush((Color $script:Theme.Text))
+        $brushMuted = New-Object System.Drawing.SolidBrush((Color $script:Theme.Muted))
 
-        foreach ($it in $items) {
-            if ($y + $rowH - 4 -gt $rect.Height - $padB + 6) { break }
-            $name = [string]$it.Name
-            $disp = [IO.Path]::GetFileNameWithoutExtension($name)
-            if ($disp.Length -gt 26) { $disp = $disp.Substring(0, 23) + '...' }
-            $isBest = ($best -and ($name -eq $best -or $disp -eq [IO.Path]::GetFileNameWithoutExtension($best)))
-            $nameBrush = if ($isBest) { New-Object System.Drawing.SolidBrush((Color $script:Theme.Green)) } else { New-Object System.Drawing.SolidBrush((Color $script:Theme.Text)) }
-            $g.DrawString($disp, $fontSmall, $nameBrush, [single]$padL, [single]($y + 1))
-            $nameBrush.Dispose()
-
-            $bx = $barX; $by = $y + [int](($rowH - $barH) / 2)
-            $track = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(40, 255, 255, 255))
-            $g.FillRectangle($track, $bx, $by, $barW, $barH); $track.Dispose()
-
-            $scale = [double]$barW / [double]$maxTotal
-            $segs = @(
-                @{ v = $it.OK;      c = $script:Theme.Green },
-                @{ v = $it.FAIL;    c = $script:Theme.Red },
-                @{ v = $it.BLOCKED; c = $script:Theme.Yellow },
-                @{ v = $it.UNSUP;   c = $script:Theme.Muted }
-            )
-            $cx = $bx
-            foreach ($seg in $segs) {
-                $wseg = [int]([Math]::Round($seg.v * $scale))
-                if ($wseg -le 0) { continue }
-                if ($cx + $wseg -gt $bx + $barW) { $wseg = $bx + $barW - $cx }
-                if ($wseg -le 0) { continue }
-                $b2 = New-Object System.Drawing.SolidBrush((Color $seg.c))
-                $g.FillRectangle($b2, $cx, $by, $wseg, $barH)
-                $b2.Dispose()
-                $cx += $wseg
+        $items = @()
+        $best = ''
+        if ($null -ne $data -and $null -ne $data.Items) {
+            $rawItems = @($data.Items)
+            if ($maxItemsN -gt 0 -and $rawItems.Count -gt $maxItemsN) {
+                $items = @($rawItems | Select-Object -First $maxItemsN)
+            } else {
+                $items = $rawItems
             }
-            $pbr = New-Object System.Drawing.Pen((Color $script:Theme.BorderLight), 1)
-            $g.DrawRectangle($pbr, $bx, $by, $barW, $barH); $pbr.Dispose()
+            $best = [string]$data.Best
+        }
+        $count = [int]@($items).Count
 
-            $summary = ('OK {0}  FAIL {1}  BLK {2}' -f $it.OK, $it.FAIL, $it.BLOCKED)
-            $g.DrawString($summary, $fontSmall, $brushMuted, [single]($barX + $barW + 6), [single]($y + 1))
-            $y += $rowH
-        }
+        if ($count -le 0) {
+            $msg = 'График: нет данных — запустите тесты стратегий (вкладка «Тесты»)'
+            $sf = New-Object System.Drawing.StringFormat
+            try {
+                $sf.Alignment = [System.Drawing.StringAlignment]::Center
+                $sf.LineAlignment = [System.Drawing.StringAlignment]::Center
+                $msgRect = New-Object System.Drawing.RectangleF([single]0, [single]0, [single]$rw, [single]$rh)
+                $g.DrawString($msg, $fontTitle, $brushMuted, $msgRect, $sf)
+            } finally {
+                $sf.Dispose()
+            }
+        } else {
+            $maxTotal = 1
+            foreach ($it in $items) {
+                $tv = [int]$it.Total
+                if ($tv -gt $maxTotal) { $maxTotal = $tv }
+            }
+            $maxTotal = [int][Math]::Max(1, $maxTotal)
 
-        $ly = $rect.Height - $padB + 6
-        $lx = $padL
-        $legend = @(
-            @{ t = 'OK'; c = $script:Theme.Green },
-            @{ t = 'FAIL'; c = $script:Theme.Red },
-            @{ t = 'BLOCKED'; c = $script:Theme.Yellow },
-            @{ t = 'UNSUP'; c = $script:Theme.Muted }
-        )
-        foreach ($le in $legend) {
-            $lb = New-Object System.Drawing.SolidBrush((Color $le.c))
-            $g.FillRectangle($lb, $lx, $ly + 2, 10, 10); $lb.Dispose()
-            $g.DrawString($le.t, $fontSmall, $brushMuted, [single]($lx + 14), [single]$ly)
-            $lx += 80
+            $title = 'График результатов (топ стратегий)'
+            $g.DrawString($title, $fontTitle, $brushText, [single]$padL, [single]($padT - 2))
+
+            $y = [int]($padT + 22)
+            $rowMin = [int]($(if ($isCompact) { 16 } else { 20 }))
+            $rowMax = [int]($(if ($isCompact) { 22 } else { 28 }))
+            $availRowsH = [int][Math]::Max(1, ($innerH - 24))
+            $rowFit = [int][Math]::Floor([double]$availRowsH / [double][Math]::Max(1, $count))
+            $rowH = [int][Math]::Max($rowMin, [Math]::Min($rowMax, $rowFit))
+
+            $labelRatio = [double]0.34
+            $labelW = [int][Math]::Min([int][Math]::Max(120, [int]([double]$innerW * $labelRatio)), 260)
+            $barX = [int]($padL + $labelW + 8)
+            $rightExtra = [int]($(if ($isCompact) { 0 } else { 80 }))
+            $barW = [int][Math]::Max(40, ($rw - $barX - $padR - $rightExtra))
+            $barH = [int][Math]::Max(8, ($rowH - 8))
+
+            foreach ($it in $items) {
+                $limitY = [int]($rh - $padB + 6)
+                if (([int]$y + [int]$rowH - 4) -gt $limitY) { break }
+
+                $name = [string]$it.Name
+                $disp = [IO.Path]::GetFileNameWithoutExtension($name)
+                if ([string]::IsNullOrEmpty($disp)) { $disp = $name }
+                if ($disp.Length -gt 26) { $disp = $disp.Substring(0, 23) + '...' }
+                $bestName = [IO.Path]::GetFileNameWithoutExtension($best)
+                $isBest = (($best -ne '') -and (($name -eq $best) -or ($disp -eq $bestName)))
+
+                $nameColor = if ($isBest) { (Color $script:Theme.Green) } else { (Color $script:Theme.Text) }
+                $nameBrush = New-Object System.Drawing.SolidBrush($nameColor)
+                try {
+                    $g.DrawString($disp, $fontSmall, $nameBrush, [single]$padL, [single]($y + 1))
+                } finally {
+                    $nameBrush.Dispose()
+                }
+
+                $bx = [int]$barX
+                $by = [int]($y + [int][Math]::Floor(([double]$rowH - [double]$barH) / 2.0))
+                $track = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(40, 255, 255, 255))
+                try {
+                    $g.FillRectangle($track, $bx, $by, $barW, $barH)
+                } finally {
+                    $track.Dispose()
+                }
+
+                $segs = @(
+                    @{ v = [int]$it.OK;      c = $script:Theme.Green },
+                    @{ v = [int]$it.FAIL;    c = $script:Theme.Red },
+                    @{ v = [int]$it.BLOCKED; c = $script:Theme.Yellow },
+                    @{ v = [int]$it.UNSUP;   c = $script:Theme.Muted }
+                )
+                $cx = [int]$bx
+                foreach ($seg in $segs) {
+                    $sv = [int]$seg.v
+                    if ($sv -le 0) { continue }
+                    $wseg = [int][Math]::Round(([double]$sv * [double]$barW) / [double]$maxTotal)
+                    if ($wseg -le 0) { continue }
+                    $maxX = [int]($bx + $barW)
+                    $endX = [int]($cx + $wseg)
+                    if ($endX -gt $maxX) { $wseg = [int]($maxX - $cx) }
+                    if ($wseg -le 0) { continue }
+                    $b2 = New-Object System.Drawing.SolidBrush((Color $seg.c))
+                    try {
+                        $g.FillRectangle($b2, $cx, $by, $wseg, $barH)
+                    } finally {
+                        $b2.Dispose()
+                    }
+                    $cx = [int]($cx + $wseg)
+                }
+                $pbr = New-Object System.Drawing.Pen((Color $script:Theme.BorderLight), 1)
+                try {
+                    $g.DrawRectangle($pbr, $bx, $by, $barW, $barH)
+                } finally {
+                    $pbr.Dispose()
+                }
+
+                $summary = ('OK {0}  FAIL {1}  BLK {2}' -f [int]$it.OK, [int]$it.FAIL, [int]$it.BLOCKED)
+                $g.DrawString($summary, $fontSmall, $brushMuted, [single]($barX + $barW + 6), [single]($y + 1))
+                $y = [int]($y + $rowH)
+            }
+
+            $ly = [int]($rh - $padB + 6)
+            $lx = [int]$padL
+            $legend = @(
+                @{ t = 'OK'; c = $script:Theme.Green },
+                @{ t = 'FAIL'; c = $script:Theme.Red },
+                @{ t = 'BLOCKED'; c = $script:Theme.Yellow },
+                @{ t = 'UNSUP'; c = $script:Theme.Muted }
+            )
+            foreach ($le in $legend) {
+                $lb = New-Object System.Drawing.SolidBrush((Color $le.c))
+                try {
+                    $g.FillRectangle($lb, $lx, ($ly + 2), 10, 10)
+                } finally {
+                    $lb.Dispose()
+                }
+                $g.DrawString([string]$le.t, $fontSmall, $brushMuted, [single]($lx + 14), [single]$ly)
+                $lx = [int]($lx + 80)
+            }
+            if ($null -ne $data.Date) {
+                try {
+                    $ds = ([datetime]$data.Date).ToString('dd.MM HH:mm')
+                    $sz = $g.MeasureString($ds, $fontSmall)
+                    $rightX = [single]([double]$rw - [double]$padR - [double]$sz.Width)
+                    $g.DrawString($ds, $fontSmall, $brushMuted, $rightX, [single]$ly)
+                } catch { }
+            }
         }
-        if ($data.Date) {
-            $ds = $data.Date.ToString('dd.MM HH:mm')
-            $sz = $g.MeasureString($ds, $fontSmall)
-            $g.DrawString($ds, $fontSmall, $brushMuted, [single]($rect.Width - $padR - $sz.Width), [single]$ly)
-        }
+    } catch {
+        try {
+            if ($g -and $e -and $sender) {
+                $ef = New-Object System.Drawing.Font('Segoe UI', 8.5)
+                $eb = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(230, 255, 120, 120))
+                try {
+                    $msg = 'Ошибка отрисовки графика: ' + $_.Exception.Message
+                    $g.DrawString($msg, $ef, $eb, [single]10, [single]10)
+                } finally {
+                    $eb.Dispose(); $ef.Dispose()
+                }
+            }
+        } catch { }
+    } finally {
+        if ($null -ne $brushMuted) { try { $brushMuted.Dispose() } catch { } }
+        if ($null -ne $brushText) { try { $brushText.Dispose() } catch { } }
+        if ($null -ne $fontSmall) { try { $fontSmall.Dispose() } catch { } }
+        if ($null -ne $fontTitle) { try { $fontTitle.Dispose() } catch { } }
+        if ($null -ne $bg) { try { $bg.Dispose() } catch { } }
     }
-
-    $brushMuted.Dispose(); $brushText.Dispose(); $fontSmall.Dispose(); $fontTitle.Dispose()
 }
 
 function Get-StrategyInfo([string]$name) {
@@ -1409,7 +1500,7 @@ foreach ($nav in $navNames) {
 $sideVerCard = New-UICard -Parent $sidebar -X 14 -Y 514 -W 186 -H 56
 [void](New-UILabel -Parent $sideVerCard -Text 'ZAPRET CONTROL' -X 12 -Y 8 -W 160 -H 18 `
     -Size 8 -Color $script:Theme.Muted -Bold $true)
-[void](New-UILabel -Parent $sideVerCard -Text 'Версия 1.12.6' -X 12 -Y 28 -W 160 -H 20 `
+[void](New-UILabel -Parent $sideVerCard -Text 'Версия 1.12.7' -X 12 -Y 28 -W 160 -H 20 `
     -Size 10 -Color $script:Theme.Text -Bold $true)
 
 # --- status bar ---
@@ -2287,7 +2378,7 @@ function Run-Diagnostics {
     $script:DiagBox.Clear()
     Add-Diag '=== ДИАГНОСТИКА ZAPRET CONTROL ===' $script:Theme.Cyan
     Add-Diag "Время: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-    Add-Diag "GUI: 1.12.6 (Windows), прокси: $($script:ProxyDir)"
+    Add-Diag "GUI: 1.12.7 (Windows), прокси: $($script:ProxyDir)"
     Add-Diag ''
     $ok = $script:Theme.Green
     $bad = $script:Theme.Red
