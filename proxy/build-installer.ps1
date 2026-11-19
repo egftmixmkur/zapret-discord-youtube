@@ -2,7 +2,8 @@
     [switch]$SkipExeBuild,
     [switch]$TestBuild,
     [string]$OutputName = '',
-    [switch]$KeepStaging
+    [switch]$KeepStaging,
+    [switch]$NoMacClient
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,7 +17,7 @@ $ErrorActionPreference = 'Stop'
 
 $dir = $PSScriptRoot
 $root = Split-Path -Parent $dir
-$version = '1.12.2'
+$version = '1.12.3'
 $module = Join-Path $dir 'tools\ps2exe\ps2exe.psd1'
 $templatePath = Join-Path $dir 'installer\setup-template.ps1'
 $icon = Join-Path $dir 'zapret.ico'
@@ -86,14 +87,17 @@ try {
         '*.log', '*.pid', '*.disabled', '*.autostart', '*.pyc', '__pycache__',
         'connection-test.txt', 'ui-test.txt', 'self-test.txt', 'gui-startup-err.txt',
         'gui-settings.json', 'install-info.json', 'ZapretControl-test.exe',
-        'ZapretControlSetup.exe', 'ZapretControlSetup-test.exe', 'ZAPRET CONTROL.lnk',
+        'ZapretControlSetup.exe', 'ZapretControlSetup-test.exe', 'ZapretControlSetup-no-mac.exe', 'ZapretControlSetup-no-mac-test.exe', 'ZAPRET CONTROL.lnk',
         'build-installer.ps1', 'installer', 'tools', 'zapret-strategy.txt'
     )
 
     # macOS-клиент (локальный обход DPI / LAN) и корневой README при наличии.
-    Copy-Filtered (Join-Path $root 'macos') (Join-Path $stage 'macos') @(
-        '__pycache__', '*.pyc', '*.tmp')
     $rootReadme = Join-Path $root 'README.md'
+    if (-not $NoMacClient) {
+        # macOS client (ZapretControl.app/CLI) for local DPI bypass or LAN mode.
+        Copy-Filtered (Join-Path $root 'macos') (Join-Path $stage 'macos') @(
+            '__pycache__', '*.pyc', '*.tmp')
+    }
     if (Test-Path -LiteralPath $rootReadme) {
         Copy-Item -LiteralPath $rootReadme -Destination (Join-Path $stage 'README.md') -Force
     }
@@ -129,7 +133,10 @@ try {
         if ([IO.Path]::IsPathRooted($OutputName)) { $OutputName }
         else { Join-Path $dir $OutputName }
     } elseif ($TestBuild) {
-        Join-Path $dir 'ZapretControlSetup-test.exe'
+        if ($NoMacClient) { Join-Path $dir 'ZapretControlSetup-no-mac-test.exe' }
+        else { Join-Path $dir 'ZapretControlSetup-test.exe' }
+    } elseif ($NoMacClient) {
+        Join-Path $dir 'ZapretControlSetup-no-mac.exe'
     } else {
         Join-Path $dir 'ZapretControlSetup.exe'
     }
