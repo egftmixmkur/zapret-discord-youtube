@@ -1146,23 +1146,28 @@ function New-UICard {
     $panel.Padding = New-Object System.Windows.Forms.Padding -ArgumentList @(1, 1, 1, 1)
     $panel.Add_Paint({
         param($sender, $e)
-        $rect = $sender.ClientRectangle
-        if ($rect.Width -le 2 -or $rect.Height -le 2) { return }
-        $e.Graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-        $top = Color $script:Theme.BorderLight
-        $bot = Color $script:Theme.Border
-        $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-            $rect, $top, $bot, [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
-        $pen = New-Object System.Drawing.Pen($brush, 1)
-        $r = New-Object System.Drawing.Rectangle(0, 0, $rect.Width - 1, $rect.Height - 1)
-        $e.Graphics.DrawRectangle($pen, $r)
-        $pen.Dispose(); $brush.Dispose()
-        $hi = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(40, 255, 255, 255), 1)
-        $e.Graphics.DrawLine($hi, 1, 1, $rect.Width - 2, 1)
-        $hi.Dispose()
-        $sh = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(90, 0, 0, 0), 1)
-        $e.Graphics.DrawLine($sh, 1, $rect.Height - 1, $rect.Width - 1, $rect.Height - 1)
-        $sh.Dispose()
+        try {
+            $rect = $sender.ClientRectangle
+            $w = [int]$rect.Width
+            $h = [int]$rect.Height
+            if ($w -le 2 -or $h -le 2) { return }
+            $e.Graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+            $top = Color $script:Theme.BorderLight
+            $bot = Color $script:Theme.Border
+            $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+                $rect, $top, $bot, [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
+            try {
+                $pen = New-Object System.Drawing.Pen($brush, 1)
+                try {
+                    $r = New-Object System.Drawing.Rectangle(0, 0, [int][Math]::Max(1, ($w - 1)), [int][Math]::Max(1, ($h - 1)))
+                    $e.Graphics.DrawRectangle($pen, $r)
+                } finally { $pen.Dispose() }
+            } finally { $brush.Dispose() }
+            $hi = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(40, 255, 255, 255), 1)
+            try { $e.Graphics.DrawLine($hi, 1, 1, [int][Math]::Max(1, ($w - 2)), 1) } finally { $hi.Dispose() }
+            $sh = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(90, 0, 0, 0), 1)
+            try { $e.Graphics.DrawLine($sh, 1, [int]($h - 1), [int]($w - 1), [int]($h - 1)) } finally { $sh.Dispose() }
+        } catch { }
     })
     $Parent.Controls.Add($panel)
     if ($Title) {
@@ -1391,20 +1396,24 @@ $header.Height = 98
 $header.BackColor = Color $script:Theme.Surface
 $header.Add_Paint({
     param($sender, $e)
-    $rect = $sender.ClientRectangle
-    if ($rect.Width -le 0 -or $rect.Height -le 0) { return }
-    $c1 = Color $script:Theme.SurfaceHi
-    $c2 = Color $script:Theme.BgDeep
-    $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-        $rect, $c1, $c2, [System.Drawing.Drawing2D.LinearGradientMode]::Horizontal)
-    $e.Graphics.FillRectangle($brush, $rect)
-    $brush.Dispose()
-    $line = New-Object System.Drawing.Pen((Color $script:Theme.BorderLight), 1)
-    $e.Graphics.DrawLine($line, 0, $rect.Height - 1, $rect.Width, $rect.Height - 1)
-    $line.Dispose()
-    $glow = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(55, 109, 94, 252))
-    $e.Graphics.FillRectangle($glow, 0, $rect.Height - 3, $rect.Width, 2)
-    $glow.Dispose()
+    try {
+        $rect = $sender.ClientRectangle
+        $w = [int]$rect.Width
+        $h = [int]$rect.Height
+        if ($w -le 0 -or $h -le 0) { return }
+        $c1 = Color $script:Theme.SurfaceHi
+        $c2 = Color $script:Theme.BgDeep
+        $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+            $rect, $c1, $c2, [System.Drawing.Drawing2D.LinearGradientMode]::Horizontal)
+        try { $e.Graphics.FillRectangle($brush, $rect) } finally { $brush.Dispose() }
+        $line = New-Object System.Drawing.Pen((Color $script:Theme.BorderLight), 1)
+        try { $e.Graphics.DrawLine($line, 0, [int]($h - 1), $w, [int]($h - 1)) } finally { $line.Dispose() }
+        $glow = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(55, 109, 94, 252))
+        try {
+            $gy = [int][Math]::Max(0, ($h - 3))
+            $e.Graphics.FillRectangle($glow, 0, $gy, $w, 2)
+        } finally { $glow.Dispose() }
+    } catch { }
 })
 $form.Controls.Add($header)
 
@@ -1414,12 +1423,14 @@ $accent.Width = 5
 $accent.BackColor = [System.Drawing.Color]::Transparent
 $accent.Add_Paint({
     param($sender, $e)
-    $rect = $sender.ClientRectangle
-    if ($rect.Width -le 0 -or $rect.Height -le 0) { return }
-    $b = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-        $rect, (Color $script:Theme.Green), (Color $script:Theme.Accent),
-        [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
-    $e.Graphics.FillRectangle($b, $rect); $b.Dispose()
+    try {
+        $rect = $sender.ClientRectangle
+        if ([int]$rect.Width -le 0 -or [int]$rect.Height -le 0) { return }
+        $b = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+            $rect, (Color $script:Theme.Green), (Color $script:Theme.Accent),
+            [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
+        try { $e.Graphics.FillRectangle($b, $rect) } finally { $b.Dispose() }
+    } catch { }
 })
 $header.Controls.Add($accent)
 
@@ -1454,15 +1465,18 @@ $sidebar.Width = 214
 $sidebar.BackColor = Color $script:Theme.Surface
 $sidebar.Add_Paint({
     param($sender, $e)
-    $rect = $sender.ClientRectangle
-    if ($rect.Width -le 0 -or $rect.Height -le 0) { return }
-    $b = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-        $rect, (Color $script:Theme.BgDeep), (Color $script:Theme.Surface),
-        [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
-    $e.Graphics.FillRectangle($b, $rect); $b.Dispose()
-    $pen = New-Object System.Drawing.Pen((Color $script:Theme.Border), 1)
-    $e.Graphics.DrawLine($pen, $rect.Width - 1, 0, $rect.Width - 1, $rect.Height)
-    $pen.Dispose()
+    try {
+        $rect = $sender.ClientRectangle
+        $w = [int]$rect.Width
+        $h = [int]$rect.Height
+        if ($w -le 0 -or $h -le 0) { return }
+        $b = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+            $rect, (Color $script:Theme.BgDeep), (Color $script:Theme.Surface),
+            [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
+        try { $e.Graphics.FillRectangle($b, $rect) } finally { $b.Dispose() }
+        $pen = New-Object System.Drawing.Pen((Color $script:Theme.Border), 1)
+        try { $e.Graphics.DrawLine($pen, [int]($w - 1), 0, [int]($w - 1), $h) } finally { $pen.Dispose() }
+    } catch { }
 })
 $form.Controls.Add($sidebar)
 
@@ -1500,7 +1514,7 @@ foreach ($nav in $navNames) {
 $sideVerCard = New-UICard -Parent $sidebar -X 14 -Y 514 -W 186 -H 56
 [void](New-UILabel -Parent $sideVerCard -Text 'ZAPRET CONTROL' -X 12 -Y 8 -W 160 -H 18 `
     -Size 8 -Color $script:Theme.Muted -Bold $true)
-[void](New-UILabel -Parent $sideVerCard -Text 'Версия 1.12.7' -X 12 -Y 28 -W 160 -H 20 `
+[void](New-UILabel -Parent $sideVerCard -Text 'Версия 1.12.8' -X 12 -Y 28 -W 160 -H 20 `
     -Size 10 -Color $script:Theme.Text -Bold $true)
 
 # --- status bar ---
@@ -1510,10 +1524,12 @@ $statusBar.Height = 32
 $statusBar.BackColor = Color $script:Theme.Surface2
 $statusBar.Add_Paint({
     param($sender, $e)
-    $rect = $sender.ClientRectangle
-    $pen = New-Object System.Drawing.Pen((Color $script:Theme.Border), 1)
-    $e.Graphics.DrawLine($pen, 0, 0, $rect.Width, 0)
-    $pen.Dispose()
+    try {
+        $rect = $sender.ClientRectangle
+        $w = [int]$rect.Width
+        $pen = New-Object System.Drawing.Pen((Color $script:Theme.Border), 1)
+        try { $e.Graphics.DrawLine($pen, 0, 0, $w, 0) } finally { $pen.Dispose() }
+    } catch { }
 })
 $form.Controls.Add($statusBar)
 $script:StatusAdmin = New-UILabel -Parent $statusBar -Text 'Админ: ...' -X 12 -Y 5 -W 140 -H 20 `
@@ -1663,7 +1679,7 @@ $script:OverviewChart.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor
     [System.Windows.Forms.AnchorStyles]::Bottom
 $script:OverviewChart.Add_Paint({
     param($sender, $e)
-    Draw-ResultsChart -sender $sender -e $e -data $script:TestChartData -maxItems 6 -compact $true
+    try { Draw-ResultsChart -sender $sender -e $e -data $script:TestChartData -maxItems 6 -compact $true } catch { }
 })
 $ovInfo.Controls.Add($script:OverviewChart)
 
@@ -2113,7 +2129,7 @@ $script:TestChart.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor
     [System.Windows.Forms.AnchorStyles]::Right
 $script:TestChart.Add_Paint({
     param($sender, $e)
-    Draw-ResultsChart -sender $sender -e $e -data $script:TestChartData -maxItems 10 -compact $false
+    try { Draw-ResultsChart -sender $sender -e $e -data $script:TestChartData -maxItems 10 -compact $false } catch { }
 })
 $tsResultCard.Controls.Add($script:TestChart)
 
@@ -2378,7 +2394,7 @@ function Run-Diagnostics {
     $script:DiagBox.Clear()
     Add-Diag '=== ДИАГНОСТИКА ZAPRET CONTROL ===' $script:Theme.Cyan
     Add-Diag "Время: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-    Add-Diag "GUI: 1.12.7 (Windows), прокси: $($script:ProxyDir)"
+    Add-Diag "GUI: 1.12.8 (Windows), прокси: $($script:ProxyDir)"
     Add-Diag ''
     $ok = $script:Theme.Green
     $bad = $script:Theme.Red
