@@ -31,7 +31,7 @@ $script:ListsDir   = Join-Path $script:RootDir 'lists'
 $script:BindDir    = Join-Path $script:RootDir 'bin'
 $script:MacDir     = Join-Path $script:RootDir 'macos'
 $script:MacClientScript = Join-Path $script:MacDir 'zapret-proxy.command'
-$script:AppVersion = '1.12.11'
+$script:AppVersion = '1.12.12'
 $script:UpdateRepo = 'egftmixmkur/zapret-discord-youtube'
 $script:StrategyFile = Join-Path $script:ProxyDir 'zapret-strategy.txt'
 $script:TestScript = Join-Path $script:UtilsDir 'test zapret.ps1'
@@ -684,6 +684,48 @@ function Stop-ZapretNow {
     Update-Status
 }
 
+
+function Test-ZapretBypassRunning {
+    $winws = @(Get-Process -Name 'winws' -ErrorAction SilentlyContinue)
+    if ($winws.Count -gt 0) { return $true }
+    $svc = Get-Service -Name 'zapret' -ErrorAction SilentlyContinue
+    return ($svc -and $svc.Status -eq 'Running')
+}
+
+function Toggle-ZapretBypass {
+    try {
+        if (Test-ZapretBypassRunning) {
+            Stop-ZapretNow
+            try { if ($script:TrayIcon) { $script:TrayIcon.ShowBalloonTip(3000, 'ZAPRET CONTROL', 'Обход (zapret) выключен.', [System.Windows.Forms.ToolTipIcon]::Info) } } catch { }
+        } else {
+            $s = Get-SelectedStrategy
+            if (-not $s) {
+                [Windows.Forms.MessageBox]::Show('Стратегия не выбрана. Откройте вкладку «Zapret» и выберите стратегию.', 'Обход', 'OK', 'Warning') | Out-Null
+                return
+            }
+            Start-ZapretStrategy $s
+            try { if ($script:TrayIcon) { $script:TrayIcon.ShowBalloonTip(3000, 'ZAPRET CONTROL', "Обход включён: $s", [System.Windows.Forms.ToolTipIcon]::Info) } } catch { }
+        }
+    } catch {
+        try { [Windows.Forms.MessageBox]::Show("Не удалось переключить обход:`n$($_.Exception.Message)", 'Обход', 'OK', 'Warning') | Out-Null } catch { }
+    }
+    try { Update-Status } catch { }
+    try { Update-BypassUiState } catch { }
+}
+
+function Update-BypassUiState {
+    $on = Test-ZapretBypassRunning
+    $label = if ($on) { 'Обход: ВКЛ (Ctrl+Alt+Z)' } else { 'Обход: ВЫКЛ (Ctrl+Alt+Z)' }
+    try { if ($script:TrayToggleBypass) { $script:TrayToggleBypass.Text = $label } } catch { }
+    try {
+        if ($script:TrayIcon) {
+            $state = if ($on) { 'обход ВКЛ' } else { 'обход ВЫКЛ' }
+            $txt = "ZAPRET CONTROL — $state"
+            if ($txt.Length -gt 63) { $txt = $txt.Substring(0,63) }
+            $script:TrayIcon.Text = $txt
+        }
+    } catch { }
+}
 function Restart-ProxyNow {
     Remove-Item -LiteralPath (Join-Path $script:ProxyDir 'proxy.disabled') -Force -ErrorAction SilentlyContinue
     & powershell.exe -NoProfile -ExecutionPolicy Bypass `
@@ -1693,6 +1735,7 @@ $script:Settings = [pscustomobject]@{
     Tab            = 'overview'
     MinimizeToTray = $false
     AutoCheckAppUpdates = $true
+    HotkeyToggleZapret  = $true
 }
 $script:CurrentTab = 'overview'
 
@@ -1712,6 +1755,7 @@ function Read-GuiSettings {
         if ($obj.Tab) { $script:Settings.Tab = [string]$obj.Tab }
         $script:Settings.MinimizeToTray = [bool]$obj.MinimizeToTray
         if ($null -ne $obj.AutoCheckAppUpdates) { $script:Settings.AutoCheckAppUpdates = [bool]$obj.AutoCheckAppUpdates } else { $script:Settings.AutoCheckAppUpdates = $true }
+        if ($null -ne $obj.HotkeyToggleZapret) { $script:Settings.HotkeyToggleZapret = [bool]$obj.HotkeyToggleZapret } else { $script:Settings.HotkeyToggleZapret = $true }
 
 
         $width = if ($null -ne $obj.Width) { [int]$obj.Width } else { 0 }
@@ -1742,6 +1786,7 @@ function Read-GuiSettings {
                 Tab            = $script:Settings.Tab
                 MinimizeToTray = [bool]$script:Settings.MinimizeToTray
                 AutoCheckAppUpdates = [bool]$script:Settings.AutoCheckAppUpdates
+                HotkeyToggleZapret  = [bool]$script:Settings.HotkeyToggleZapret
             }
             ($repair | ConvertTo-Json) |
                 Set-Content -LiteralPath $script:SettingsFile -Encoding UTF8
@@ -1760,6 +1805,7 @@ function Save-GuiSettings {
             Tab            = $script:CurrentTab
             MinimizeToTray = [bool]$script:Settings.MinimizeToTray
             AutoCheckAppUpdates = [bool]$script:Settings.AutoCheckAppUpdates
+            HotkeyToggleZapret  = [bool]$script:Settings.HotkeyToggleZapret
         }
         # У свёрнутого/скрытого окна Width/Left бессмысленны (160x28, -32000),
         # поэтому берём RestoreBounds, а при сомнительных значениях — не пишем их.
@@ -1963,7 +2009,7 @@ foreach ($nav in $navNames) {
 $sideVerCard = New-UICard -Parent $sidebar -X 14 -Y 504 -W 186 -H 66
 [void](New-UILabel -Parent $sideVerCard -Text 'ZAPRET CONTROL' -X 12 -Y 10 -W 160 -H 18 `
     -Size 8 -Color $script:Theme.Accent -Bold $true)
-[void](New-UILabel -Parent $sideVerCard -Text 'Версия 1.12.11' -X 12 -Y 30 -W 160 -H 22 `
+[void](New-UILabel -Parent $sideVerCard -Text 'Версия 1.12.12' -X 12 -Y 30 -W 160 -H 22 `
     -Size 10.5 -Color $script:Theme.White -Bold $true)
 
 # --- status bar ---
@@ -2107,6 +2153,8 @@ $ov.Controls.Add($quick)
     })
 [void](New-UIButton -Parent $quick -Text 'Проверить соединение' -X 0 -Y 0 -W 190 -H 40 `
     -Back $script:Theme.Cyan -Fore $script:Theme.Bg -OnClick { Show-ConnectionTest })
+[void](New-UIButton -Parent $quick -Text 'Вкл/Выкл обход (Ctrl+Alt+Z)' -X 0 -Y 0 -W 230 -H 40 `
+    -Back $script:Theme.Accent -OnClick { Toggle-ZapretBypass })
 
 $ovInfo = New-UICard -Parent $ov -X 14 -Y 218 -W 850 -H 190 -Title 'СОСТОЯНИЕ И ПОДСКАЗКА'
 $ovInfo.Dock = [System.Windows.Forms.DockStyle]::Fill
@@ -2850,6 +2898,14 @@ $tl.Controls.Add($tlTop)
     -Back $script:Theme.Surface3 -OnClick { Open-MacReadme })
 [void](New-UIButton -Parent $tlTop -Text 'macOS: релизы' -X 0 -Y 0 -W 150 -H 40 `
     -Back $script:Theme.Cyan -Fore $script:Theme.Bg -OnClick { Open-MacRelease })
+[void](New-UIButton -Parent $tlTop -Text 'Списки (папка)' -X 0 -Y 0 -W 140 -H 40 `
+    -Back $script:Theme.Surface3 -OnClick { Start-Process -FilePath 'explorer.exe' -ArgumentList "`"$script:ListsDir`"" })
+[void](New-UIButton -Parent $tlTop -Text 'Мои домены' -X 0 -Y 0 -W 130 -H 40 `
+    -Back $script:Theme.Surface3 -OnClick { $f = Join-Path $script:ListsDir 'list-general-user.txt'; if (-not (Test-Path $f)) { New-Item -ItemType File -Path $f -Force | Out-Null }; Start-Process -FilePath 'notepad.exe' -ArgumentList "`"$f`"" })
+[void](New-UIButton -Parent $tlTop -Text 'Исключения' -X 0 -Y 0 -W 130 -H 40 `
+    -Back $script:Theme.Surface3 -OnClick { $f = Join-Path $script:ListsDir 'list-exclude-user.txt'; if (-not (Test-Path $f)) { New-Item -ItemType File -Path $f -Force | Out-Null }; Start-Process -FilePath 'notepad.exe' -ArgumentList "`"$f`"" })
+[void](New-UIButton -Parent $tlTop -Text 'IP исключения' -X 0 -Y 0 -W 140 -H 40 `
+    -Back $script:Theme.Surface3 -OnClick { $f = Join-Path $script:ListsDir 'ipset-exclude-user.txt'; if (-not (Test-Path $f)) { New-Item -ItemType File -Path $f -Force | Out-Null }; Start-Process -FilePath 'notepad.exe' -ArgumentList "`"$f`"" })
 $script:MinTrayCheck = New-UICheckBox -Parent $tlTop -Text 'Сворачивать в трей' `
     -X 0 -Y 4 -W 190 -Checked ([bool]$script:Settings.MinimizeToTray)
 $script:MinTrayCheck.Add_Click({
@@ -2868,6 +2924,13 @@ $script:AutoAppUpdateCheck.Add_Click({
     $script:Settings.AutoCheckAppUpdates = [bool]$script:AutoAppUpdateCheck.Checked
     if ($script:UpdAutoCheck) { $script:UpdAutoCheck.Checked = [bool]$script:AutoAppUpdateCheck.Checked }
     Save-GuiSettings
+})
+$script:HotkeyToggleCheck = New-UICheckBox -Parent $tlTop -Text 'Горячая клавиша Ctrl+Alt+Z — вкл/выкл обход' `
+    -X 0 -Y 4 -W 340 -Checked ([bool]$script:Settings.HotkeyToggleZapret)
+$script:HotkeyToggleCheck.Add_Click({
+    $script:Settings.HotkeyToggleZapret = [bool]$script:HotkeyToggleCheck.Checked
+    Save-GuiSettings
+    try { Update-HotkeyRegistration } catch { }
 })
 
 $script:DiagBox = New-Object System.Windows.Forms.RichTextBox
@@ -2931,7 +2994,7 @@ function Run-Diagnostics {
     $script:DiagBox.Clear()
     Add-Diag '=== ДИАГНОСТИКА ZAPRET CONTROL ===' $script:Theme.Cyan
     Add-Diag "Время: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-    Add-Diag "GUI: 1.12.11 (Windows), прокси: $($script:ProxyDir)"
+    Add-Diag "GUI: 1.12.12 (Windows), прокси: $($script:ProxyDir)"
     Add-Diag ''
     $ok = $script:Theme.Green
     $bad = $script:Theme.Red
@@ -3146,6 +3209,7 @@ function Update-Status {
         $script:StatusAdmin.Text = "Админ: $(if ($script:IsAdmin) { 'да' } else { 'нет' })"
         $script:StatusAdmin.ForeColor = Color $(if ($script:IsAdmin) { $script:Theme.Green } else { $script:Theme.Red })
     }
+    try { Update-BypassUiState } catch { }
     if ($script:StatusPython) {
         $py = (Get-Command pythonw.exe -ErrorAction SilentlyContinue).Source
         if (-not $py) { $py = (Get-Command python.exe -ErrorAction SilentlyContinue).Source }
@@ -3368,6 +3432,68 @@ $script:LogTimer.Add_Tick({
 })
 $script:LogTimer.Start()
 
+
+# --------------------------------------------------------------------------
+#  Глобальная горячая клавиша: Ctrl+Alt+Z — вкл/выкл обход (zapret)
+# --------------------------------------------------------------------------
+
+$script:HotkeyRegistered = $false
+try {
+    if (-not ('ZapretHotkeyNative' -as [type])) {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class ZapretHotkeyNative {
+    [DllImport("user32.dll", SetLastError=true)]
+    public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+    [DllImport("user32.dll", SetLastError=true)]
+    public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+}
+"@ -ErrorAction Stop
+    }
+} catch { }
+try {
+    if (-not ('ZapretHotkeyFilter' -as [type])) {
+        Add-Type -ReferencedAssemblies System.Windows.Forms -TypeDefinition @"
+using System;
+using System.Windows.Forms;
+public class ZapretHotkeyFilter : IMessageFilter {
+    public const int WM_HOTKEY = 0x0312;
+    public static event Action<int> HotkeyPressed;
+    public bool PreFilterMessage(ref Message m) {
+        if (m.Msg == WM_HOTKEY) {
+            try { var h = HotkeyPressed; if (h != null) h(m.WParam.ToInt32()); } catch { }
+            return true;
+        }
+        return false;
+    }
+}
+"@ -ErrorAction Stop
+    }
+} catch { }
+$script:HotkeyFilter = $null
+try { $script:HotkeyFilter = New-Object ZapretHotkeyFilter } catch { }
+try {
+    [ZapretHotkeyFilter]::add_HotkeyPressed({
+        param($id)
+        try { if ($id -eq 1) { Toggle-ZapretBypass } } catch { }
+    })
+} catch { }
+
+function Update-HotkeyRegistration {
+    try {
+        if ($script:HotkeyRegistered) {
+            try { [ZapretHotkeyNative]::UnregisterHotKey($form.Handle, 1) | Out-Null } catch { }
+            $script:HotkeyRegistered = $false
+        }
+        if ([bool]$script:Settings.HotkeyToggleZapret -and ('ZapretHotkeyNative' -as [type])) {
+            # MOD_CONTROL(2) | MOD_ALT(1) = 3, VK_Z = 0x5A
+            $ok = [ZapretHotkeyNative]::RegisterHotKey($form.Handle, 1, 3, 0x5A)
+            $script:HotkeyRegistered = [bool]$ok
+        }
+    } catch { }
+}
+
 # --------------------------------------------------------------------------
 #  Значок в трее и восстановление окна
 # --------------------------------------------------------------------------
@@ -3405,6 +3531,7 @@ function Hide-ToTray {
 
 $trayMenu = New-Object System.Windows.Forms.ContextMenuStrip
 $trayOpen = $trayMenu.Items.Add('Открыть окно')
+$script:TrayToggleBypass = $trayMenu.Items.Add('Обход: ... (Ctrl+Alt+Z)')
 $trayMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator)) | Out-Null
 $trayStart = $trayMenu.Items.Add('Запустить всё')
 $trayStop = $trayMenu.Items.Add('Остановить всё')
@@ -3416,6 +3543,7 @@ $trayExit = $trayMenu.Items.Add('Выход')
 $script:TrayIcon.ContextMenuStrip = $trayMenu
 
 $trayOpen.Add_Click({ Show-MainWindow })
+$script:TrayToggleBypass.Add_Click({ Toggle-ZapretBypass })
 $trayStart.Add_Click({ Invoke-VisibleBat (Join-Path $script:ProxyDir 'start-all.bat') })
 $trayStop.Add_Click({ Invoke-VisibleBat (Join-Path $script:ProxyDir 'stop-all.bat') })
 $trayRestart.Add_Click({ Invoke-VisibleBat (Join-Path $script:ProxyDir 'restart-all.bat') })
@@ -3454,6 +3582,9 @@ $form.Add_Shown({
     }
     Switch-Tab $startTab
     if ([bool]$script:Settings.AutoCheckAppUpdates) { Start-AppUpdateCheckAsync }
+    try { if ($script:HotkeyFilter) { [System.Windows.Forms.Application]::AddMessageFilter($script:HotkeyFilter) } } catch { }
+    try { Update-HotkeyRegistration } catch { }
+    try { Update-BypassUiState } catch { }
     try {
         Add-Type -Namespace Native -Name DarkTitle -MemberDefinition @'
 [DllImport("dwmapi.dll")]
@@ -3474,6 +3605,8 @@ $form.Add_FormClosing({
         Hide-ToTray
         return
     }
+    try { if ($script:HotkeyRegistered) { [ZapretHotkeyNative]::UnregisterHotKey($form.Handle, 1) | Out-Null } } catch { }
+    try { if ($script:HotkeyFilter) { [System.Windows.Forms.Application]::RemoveMessageFilter($script:HotkeyFilter) } } catch { }
     $script:StatusTimer.Stop()
     $script:LogTimer.Stop()
     if ($script:ConnTimer) { $script:ConnTimer.Stop() }

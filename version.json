@@ -1,5 +1,5 @@
 {
-  "version": "1.12.11",
-  "url": "https://github.com/egftmixmkur/zapret-discord-youtube/releases/download/v1.12.11/ZapretControlSetup.exe",
-  "notes": "Windows 1.12.11: отдельная вкладка «Обновления» с проверкой, установкой и историей релизов; автоматическая установка обновлений сохранена."
+  "version": "1.12.12",
+  "url": "https://github.com/egftmixmkur/zapret-discord-youtube/releases/download/v1.12.12/ZapretControlSetup.exe",
+  "notes": "Windows 1.12.12: быстрое вкл/выкл обхода (Ctrl+Alt+Z, трей, Обзор), быстрый доступ к спискам доменов/исключений, улучшения вкладки «Обновления» и удобства."
 }
