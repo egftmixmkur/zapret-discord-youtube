@@ -4,7 +4,7 @@
 set -u
 
 APP_NAME="ZAPRET CONTROL"
-APP_VERSION="0.4.0-beta"
+APP_VERSION="0.4.0"
 
 SELF_DIR=$(cd "$(dirname "$0")" && pwd)
 RES_DIR="$SELF_DIR/../Resources"

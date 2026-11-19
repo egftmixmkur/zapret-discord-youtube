@@ -1162,7 +1162,7 @@ foreach ($nav in $navNames) {
     $navY += 50
 }
 
-[void](New-UILabel -Parent $sidebar -Text 'Версия 1.12.3' -X 18 -Y 520 -W 170 -H 20 `
+[void](New-UILabel -Parent $sidebar -Text 'Версия 1.12.4' -X 18 -Y 520 -W 170 -H 20 `
     -Size 8.5 -Color $script:Theme.Muted)
 [void](New-UILabel -Parent $sidebar -Text 'proxy + utils' -X 18 -Y 540 -W 170 -H 20 `
     -Size 8.5 -Color $script:Theme.Muted)
@@ -1997,7 +1997,7 @@ function Run-Diagnostics {
     $script:DiagBox.Clear()
     Add-Diag '=== ДИАГНОСТИКА ZAPRET CONTROL ===' $script:Theme.Cyan
     Add-Diag "Время: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-    Add-Diag "GUI: 1.12.3 (Windows), прокси: $($script:ProxyDir)"
+    Add-Diag "GUI: 1.12.4 (Windows), прокси: $($script:ProxyDir)"
     Add-Diag ''
     $ok = $script:Theme.Green
     $bad = $script:Theme.Red
