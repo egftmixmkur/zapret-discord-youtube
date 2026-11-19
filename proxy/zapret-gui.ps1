@@ -64,19 +64,30 @@ function Color([string]$hex) {
 }
 
 $script:Theme = @{
-    Bg       = '#0b0f14'
-    Surface  = '#111820'
-    Surface2 = '#161f2a'
-    Surface3 = '#1d2834'
-    Border   = '#263140'
-    Text     = '#e6edf3'
-    Muted    = '#8b949e'
-    Green    = '#3ba55d'
-    Red      = '#ed4245'
-    Yellow   = '#faa61a'
-    Blue     = '#5865f2'
-    Cyan     = '#00b0f4'
-    White    = '#ffffff'
+    Bg          = '#0a0e14'
+    BgDeep      = '#070a0f'
+    Surface     = '#121924'
+    Surface2    = '#182233'
+    Surface3    = '#1f2c40'
+    SurfaceHi   = '#243247'
+    Border      = '#243247'
+    BorderLight = '#30445e'
+    Shadow      = '#05080c'
+    Text        = '#eaf1ff'
+    Muted       = '#97a8bf'
+    Green       = '#2ecc71'
+    GreenDark   = '#1f8f4e'
+    Red         = '#ff5c5c'
+    RedDark     = '#b33a3a'
+    Yellow      = '#ffb020'
+    YellowDark  = '#9a6a10'
+    Blue        = '#5b7cfa'
+    BlueDark    = '#334fb8'
+    Cyan        = '#22c1ee'
+    CyanDark    = '#147a96'
+    Accent      = '#6d5efc'
+    AccentDark  = '#4337a8'
+    White       = '#ffffff'
 }
 
 # --------------------------------------------------------------------------
@@ -851,7 +862,7 @@ function New-UILabel {
 function New-UIButton {
     param(
         $Parent, [string]$Text, [int]$X, [int]$Y, [int]$W, [int]$H,
-        [string]$Back = '#5865f2', [scriptblock]$OnClick = $null,
+        [string]$Back = '#5b7cfa', [scriptblock]$OnClick = $null,
         [string]$Fore = '#ffffff'
     )
     $button = New-Object System.Windows.Forms.Button
@@ -859,10 +870,17 @@ function New-UIButton {
     $button.Location = New-Object System.Drawing.Point -ArgumentList @($X, $Y)
     $button.Size = New-Object System.Drawing.Size -ArgumentList @($W, $H)
     $button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $button.FlatAppearance.BorderSize = 0
-    $button.BackColor = Color $Back
+    $button.FlatAppearance.BorderSize = 1
+    $base = Color $Back
+    $button.BackColor = $base
     $button.ForeColor = Color $Fore
-    $button.Font = New-Object System.Drawing.Font -ArgumentList @('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
+    $r = [Math]::Min(255, $base.R + 18); $g = [Math]::Min(255, $base.G + 18); $b = [Math]::Min(255, $base.B + 18)
+    $r2 = [Math]::Max(0, $base.R - 20); $g2 = [Math]::Max(0, $base.G - 20); $b2 = [Math]::Max(0, $base.B - 20)
+    $rb = [Math]::Min(255, $base.R + 35); $gb = [Math]::Min(255, $base.G + 35); $bb = [Math]::Min(255, $base.B + 35)
+    $button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb($r, $g, $b)
+    $button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb($r2, $g2, $b2)
+    $button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb($rb, $gb, $bb)
+    $button.Font = New-Object System.Drawing.Font -ArgumentList @('Segoe UI Semibold', 9.25)
     $button.Cursor = [System.Windows.Forms.Cursors]::Hand
     $button.UseVisualStyleBackColor = $false
     if ($OnClick) { $button.Add_Click($OnClick) }
@@ -876,6 +894,27 @@ function New-UICard {
     $panel.Location = New-Object System.Drawing.Point -ArgumentList @($X, $Y)
     $panel.Size = New-Object System.Drawing.Size -ArgumentList @($W, $H)
     $panel.BackColor = Color $script:Theme.Surface
+    $panel.Padding = New-Object System.Windows.Forms.Padding -ArgumentList @(1, 1, 1, 1)
+    $panel.Add_Paint({
+        param($sender, $e)
+        $rect = $sender.ClientRectangle
+        if ($rect.Width -le 2 -or $rect.Height -le 2) { return }
+        $e.Graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $top = Color $script:Theme.BorderLight
+        $bot = Color $script:Theme.Border
+        $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+            $rect, $top, $bot, [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
+        $pen = New-Object System.Drawing.Pen($brush, 1)
+        $r = New-Object System.Drawing.Rectangle(0, 0, $rect.Width - 1, $rect.Height - 1)
+        $e.Graphics.DrawRectangle($pen, $r)
+        $pen.Dispose(); $brush.Dispose()
+        $hi = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(40, 255, 255, 255), 1)
+        $e.Graphics.DrawLine($hi, 1, 1, $rect.Width - 2, 1)
+        $hi.Dispose()
+        $sh = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(90, 0, 0, 0), 1)
+        $e.Graphics.DrawLine($sh, 1, $rect.Height - 1, $rect.Width - 1, $rect.Height - 1)
+        $sh.Dispose()
+    })
     $Parent.Controls.Add($panel)
     if ($Title) {
         [void](New-UILabel -Parent $panel -Text $Title.ToUpper() -X 16 -Y 12 `
@@ -937,13 +976,13 @@ function New-UICombo {
 function Set-Pill {
     param($Label, [string]$Text, [string]$State)
     $Label.Text = $Text
+    $Label.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
     switch ($State) {
-        'ok'   { $Label.BackColor = Color $script:Theme.Green }
-        'warn' { $Label.BackColor = Color $script:Theme.Yellow; $Label.ForeColor = Color '#111820' }
-        'off'  { $Label.BackColor = Color $script:Theme.Red }
-        default { $Label.BackColor = Color $script:Theme.Surface3 }
+        'ok'   { $Label.BackColor = Color $script:Theme.GreenDark; $Label.ForeColor = Color $script:Theme.White }
+        'warn' { $Label.BackColor = Color $script:Theme.YellowDark; $Label.ForeColor = Color $script:Theme.White }
+        'off'  { $Label.BackColor = Color $script:Theme.RedDark; $Label.ForeColor = Color $script:Theme.White }
+        default { $Label.BackColor = Color $script:Theme.Surface3; $Label.ForeColor = Color $script:Theme.White }
     }
-    if ($State -ne 'warn') { $Label.ForeColor = Color $script:Theme.White }
 }
 
 # --------------------------------------------------------------------------
@@ -1099,20 +1138,46 @@ try {
 # --- header ---
 $header = New-Object System.Windows.Forms.Panel
 $header.Dock = [System.Windows.Forms.DockStyle]::Top
-$header.Height = 92
+$header.Height = 98
 $header.BackColor = Color $script:Theme.Surface
+$header.Add_Paint({
+    param($sender, $e)
+    $rect = $sender.ClientRectangle
+    if ($rect.Width -le 0 -or $rect.Height -le 0) { return }
+    $c1 = Color $script:Theme.SurfaceHi
+    $c2 = Color $script:Theme.BgDeep
+    $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+        $rect, $c1, $c2, [System.Drawing.Drawing2D.LinearGradientMode]::Horizontal)
+    $e.Graphics.FillRectangle($brush, $rect)
+    $brush.Dispose()
+    $line = New-Object System.Drawing.Pen((Color $script:Theme.BorderLight), 1)
+    $e.Graphics.DrawLine($line, 0, $rect.Height - 1, $rect.Width, $rect.Height - 1)
+    $line.Dispose()
+    $glow = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(55, 109, 94, 252))
+    $e.Graphics.FillRectangle($glow, 0, $rect.Height - 3, $rect.Width, 2)
+    $glow.Dispose()
+})
 $form.Controls.Add($header)
 
 $accent = New-Object System.Windows.Forms.Panel
 $accent.Dock = [System.Windows.Forms.DockStyle]::Left
-$accent.Width = 4
-$accent.BackColor = Color $script:Theme.Green
+$accent.Width = 5
+$accent.BackColor = [System.Drawing.Color]::Transparent
+$accent.Add_Paint({
+    param($sender, $e)
+    $rect = $sender.ClientRectangle
+    if ($rect.Width -le 0 -or $rect.Height -le 0) { return }
+    $b = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+        $rect, (Color $script:Theme.Green), (Color $script:Theme.Accent),
+        [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
+    $e.Graphics.FillRectangle($b, $rect); $b.Dispose()
+})
 $header.Controls.Add($accent)
 
-[void](New-UILabel -Parent $header -Text 'ZAPRET CONTROL' -X 26 -Y 16 -W 420 -H 34 `
-    -Size 20 -Color $script:Theme.Text -Bold $true)
-[void](New-UILabel -Parent $header -Text 'LAN-прокси · DPI-обход · тесты стратегий' `
-    -X 28 -Y 52 -W 500 -H 22 -Size 10 -Color $script:Theme.Muted)
+[void](New-UILabel -Parent $header -Text 'ZAPRET CONTROL' -X 28 -Y 16 -W 460 -H 38 `
+    -Size 22 -Color $script:Theme.Text -Bold $true)
+[void](New-UILabel -Parent $header -Text 'LAN-прокси · DPI-обход · тесты стратегий · панель управления' `
+    -X 30 -Y 56 -W 560 -H 24 -Size 10.5 -Color $script:Theme.Muted)
 
 $script:PillAdmin = New-UILabel -Parent $header -Text 'АДМИН: ...' -X 840 -Y 26 -W 110 -H 30 `
     -Size 9 -Color $script:Theme.White -Bold $true -Align 'MiddleCenter'
@@ -1136,42 +1201,71 @@ foreach ($pill in @($script:PillAdmin, $script:PillZapret, $script:PillProxy, $s
 # --- sidebar ---
 $sidebar = New-Object System.Windows.Forms.Panel
 $sidebar.Dock = [System.Windows.Forms.DockStyle]::Left
-$sidebar.Width = 205
+$sidebar.Width = 214
 $sidebar.BackColor = Color $script:Theme.Surface
+$sidebar.Add_Paint({
+    param($sender, $e)
+    $rect = $sender.ClientRectangle
+    if ($rect.Width -le 0 -or $rect.Height -le 0) { return }
+    $b = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+        $rect, (Color $script:Theme.BgDeep), (Color $script:Theme.Surface),
+        [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
+    $e.Graphics.FillRectangle($b, $rect); $b.Dispose()
+    $pen = New-Object System.Drawing.Pen((Color $script:Theme.Border), 1)
+    $e.Graphics.DrawLine($pen, $rect.Width - 1, 0, $rect.Width - 1, $rect.Height)
+    $pen.Dispose()
+})
 $form.Controls.Add($sidebar)
 
 $navNames = @(
-    @{ Key = 'overview'; Text = 'Обзор' },
-    @{ Key = 'proxy';    Text = 'Прокси' },
-    @{ Key = 'zapret';   Text = 'Zapret' },
-    @{ Key = 'tests';    Text = 'Тесты' },
-    @{ Key = 'logs';     Text = 'Журналы' },
-    @{ Key = 'tools';    Text = 'Инструменты' }
+    @{ Key = 'overview'; Text = '  Обзор' },
+    @{ Key = 'proxy';    Text = '  Прокси' },
+    @{ Key = 'zapret';   Text = '  Zapret' },
+    @{ Key = 'tests';    Text = '  Тесты' },
+    @{ Key = 'logs';     Text = '  Журналы' },
+    @{ Key = 'tools';    Text = '  Инструменты' }
 )
 $script:NavButtons = @{}
-$navY = 22
+$script:NavAccents = @{}
+$navY = 24
 foreach ($nav in $navNames) {
     $key = $nav.Key
-    $button = New-UIButton -Parent $sidebar -Text $nav.Text -X 14 -Y $navY -W 177 -H 42 `
+    $accentBar = New-Object System.Windows.Forms.Panel
+    $accentBar.Location = New-Object System.Drawing.Point -ArgumentList @(8, ($navY + 6))
+    $accentBar.Size = New-Object System.Drawing.Size -ArgumentList @(4, 30)
+    $accentBar.BackColor = [System.Drawing.Color]::Transparent
+    $accentBar.Visible = $false
+    $sidebar.Controls.Add($accentBar)
+    $script:NavAccents[$key] = $accentBar
+    $button = New-UIButton -Parent $sidebar -Text $nav.Text -X 18 -Y $navY -W 182 -H 42 `
         -Back $script:Theme.Surface -Fore $script:Theme.Muted -OnClick {
             Switch-Tab $key
         }.GetNewClosure()
     $button.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-    $button.Padding = New-Object System.Windows.Forms.Padding -ArgumentList @(16, 0, 0, 0)
+    $button.Padding = New-Object System.Windows.Forms.Padding -ArgumentList @(12, 0, 0, 0)
+    $button.FlatAppearance.BorderSize = 0
     $script:NavButtons[$key] = $button
-    $navY += 50
+    $navY += 52
 }
 
-[void](New-UILabel -Parent $sidebar -Text 'Версия 1.12.4' -X 18 -Y 520 -W 170 -H 20 `
-    -Size 8.5 -Color $script:Theme.Muted)
-[void](New-UILabel -Parent $sidebar -Text 'proxy + utils' -X 18 -Y 540 -W 170 -H 20 `
-    -Size 8.5 -Color $script:Theme.Muted)
+$sideVerCard = New-UICard -Parent $sidebar -X 14 -Y 514 -W 186 -H 56
+[void](New-UILabel -Parent $sideVerCard -Text 'ZAPRET CONTROL' -X 12 -Y 8 -W 160 -H 18 `
+    -Size 8 -Color $script:Theme.Muted -Bold $true)
+[void](New-UILabel -Parent $sideVerCard -Text 'Версия 1.12.5' -X 12 -Y 28 -W 160 -H 20 `
+    -Size 10 -Color $script:Theme.Text -Bold $true)
 
 # --- status bar ---
 $statusBar = New-Object System.Windows.Forms.Panel
 $statusBar.Dock = [System.Windows.Forms.DockStyle]::Bottom
-$statusBar.Height = 30
+$statusBar.Height = 32
 $statusBar.BackColor = Color $script:Theme.Surface2
+$statusBar.Add_Paint({
+    param($sender, $e)
+    $rect = $sender.ClientRectangle
+    $pen = New-Object System.Drawing.Pen((Color $script:Theme.Border), 1)
+    $e.Graphics.DrawLine($pen, 0, 0, $rect.Width, 0)
+    $pen.Dispose()
+})
 $form.Controls.Add($statusBar)
 $script:StatusAdmin = New-UILabel -Parent $statusBar -Text 'Админ: ...' -X 12 -Y 5 -W 140 -H 20 `
     -Size 8.5 -Color $script:Theme.Muted
@@ -1204,12 +1298,20 @@ function Switch-Tab([string]$key) {
         $script:Tabs[$k].Visible = ($k -eq $key)
         if ($script:NavButtons.ContainsKey($k)) {
             if ($k -eq $key) {
-                $script:NavButtons[$k].BackColor = Color $script:Theme.Surface2
-                $script:NavButtons[$k].ForeColor = Color $script:Theme.Green
+                $script:NavButtons[$k].BackColor = Color $script:Theme.SurfaceHi
+                $script:NavButtons[$k].ForeColor = Color $script:Theme.Text
+                $script:NavButtons[$k].FlatAppearance.BorderSize = 1
+                $script:NavButtons[$k].FlatAppearance.BorderColor = Color $script:Theme.BorderLight
             } else {
                 $script:NavButtons[$k].BackColor = Color $script:Theme.Surface
                 $script:NavButtons[$k].ForeColor = Color $script:Theme.Muted
+                $script:NavButtons[$k].FlatAppearance.BorderSize = 0
+                $script:NavButtons[$k].FlatAppearance.BorderColor = Color $script:Theme.Surface
             }
+        }
+        if ($script:NavAccents -and $script:NavAccents.ContainsKey($k)) {
+            $script:NavAccents[$k].Visible = ($k -eq $key)
+            $script:NavAccents[$k].BackColor = Color $script:Theme.Green
         }
     }
     if ($key -eq 'logs') { Update-LogView }
@@ -1997,7 +2099,7 @@ function Run-Diagnostics {
     $script:DiagBox.Clear()
     Add-Diag '=== ДИАГНОСТИКА ZAPRET CONTROL ===' $script:Theme.Cyan
     Add-Diag "Время: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-    Add-Diag "GUI: 1.12.4 (Windows), прокси: $($script:ProxyDir)"
+    Add-Diag "GUI: 1.12.5 (Windows), прокси: $($script:ProxyDir)"
     Add-Diag ''
     $ok = $script:Theme.Green
     $bad = $script:Theme.Red
