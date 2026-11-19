@@ -141,32 +141,32 @@ list_services() {
 }
 
 set_proxy() {
-    local host service
+    local host _service
     host="${1:-}"
     if [ $# -ge 2 ]; then
-        service="$2"
+        _service="$2"
     else
-        service="${SERVICE:-$DEFAULT_SERVICE}"
+        _service="${SERVICE:-$DEFAULT_SERVICE}"
     fi
-    networksetup -setwebproxy "$service" "$host" "$HTTP_PORT" >/dev/null 2>&1
-    networksetup -setsecurewebproxy "$service" "$host" "$HTTP_PORT" >/dev/null 2>&1
-    networksetup -setsocksfirewallproxy "$service" "$host" "$SOCKS_PORT" >/dev/null 2>&1
-    networksetup -setproxybypassdomains "$service" $BYPASS_DOMAINS >/dev/null 2>&1
-    echo "Прокси включён для «$service»: HTTP $host:$HTTP_PORT, SOCKS5 $host:$SOCKS_PORT"
+    networksetup -setwebproxy "$_service" "$host" "$HTTP_PORT" >/dev/null 2>&1
+    networksetup -setsecurewebproxy "$_service" "$host" "$HTTP_PORT" >/dev/null 2>&1
+    networksetup -setsocksfirewallproxy "$_service" "$host" "$SOCKS_PORT" >/dev/null 2>&1
+    networksetup -setproxybypassdomains "$_service" $BYPASS_DOMAINS >/dev/null 2>&1
+    echo "Прокси включён для «${_service}»: HTTP ${host}:$HTTP_PORT, SOCKS5 ${host}:$SOCKS_PORT"
     echo "Локальные адреса идут напрямую (bypass: $BYPASS_DOMAINS)"
 }
 
 unset_proxy() {
-    local service
+    local _service
     if [ $# -ge 1 ]; then
-        service="$1"
+        _service="$1"
     else
-        service="${SERVICE:-$DEFAULT_SERVICE}"
+        _service="${SERVICE:-$DEFAULT_SERVICE}"
     fi
-    networksetup -setwebproxystate "$service" off >/dev/null 2>&1
-    networksetup -setsecurewebproxystate "$service" off >/dev/null 2>&1
-    networksetup -setsocksfirewallproxystate "$service" off >/dev/null 2>&1
-    echo "Прокси выключен для «$service»"
+    networksetup -setwebproxystate "$_service" off >/dev/null 2>&1
+    networksetup -setsecurewebproxystate "$_service" off >/dev/null 2>&1
+    networksetup -setsocksfirewallproxystate "$_service" off >/dev/null 2>&1
+    echo "Прокси выключен для «${_service}»"
 }
 
 show_status() {
