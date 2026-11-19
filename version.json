@@ -1,5 +1,5 @@
 {
-  "version": "1.12.12",
-  "url": "https://github.com/egftmixmkur/zapret-discord-youtube/releases/download/v1.12.12/ZapretControlSetup.exe",
-  "notes": "Windows 1.12.12: быстрое вкл/выкл обхода (Ctrl+Alt+Z, трей, Обзор), быстрый доступ к спискам доменов/исключений, улучшения вкладки «Обновления» и удобства."
+  "version": "1.12.13",
+  "url": "https://github.com/egftmixmkur/zapret-discord-youtube/releases/download/v1.12.13/ZapretControlSetup.exe",
+  "notes": "Windows 1.12.13: исправлен интерфейс вкладки «Инструменты» (убрано пустое поле вывода, диагностика открывается в отдельном окне), сохранены хоткей вкл/выкл обхода, быстрый доступ к спискам и вкладка «Обновления»."
 }

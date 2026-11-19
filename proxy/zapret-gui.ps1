@@ -31,7 +31,7 @@ $script:ListsDir   = Join-Path $script:RootDir 'lists'
 $script:BindDir    = Join-Path $script:RootDir 'bin'
 $script:MacDir     = Join-Path $script:RootDir 'macos'
 $script:MacClientScript = Join-Path $script:MacDir 'zapret-proxy.command'
-$script:AppVersion = '1.12.12'
+$script:AppVersion = '1.12.13'
 $script:UpdateRepo = 'egftmixmkur/zapret-discord-youtube'
 $script:StrategyFile = Join-Path $script:ProxyDir 'zapret-strategy.txt'
 $script:TestScript = Join-Path $script:UtilsDir 'test zapret.ps1'
@@ -2009,7 +2009,7 @@ foreach ($nav in $navNames) {
 $sideVerCard = New-UICard -Parent $sidebar -X 14 -Y 504 -W 186 -H 66
 [void](New-UILabel -Parent $sideVerCard -Text 'ZAPRET CONTROL' -X 12 -Y 10 -W 160 -H 18 `
     -Size 8 -Color $script:Theme.Accent -Bold $true)
-[void](New-UILabel -Parent $sideVerCard -Text 'Версия 1.12.12' -X 12 -Y 30 -W 160 -H 22 `
+[void](New-UILabel -Parent $sideVerCard -Text 'Версия 1.12.13' -X 12 -Y 30 -W 160 -H 22 `
     -Size 10.5 -Color $script:Theme.White -Bold $true)
 
 # --- status bar ---
@@ -2839,10 +2839,10 @@ $upd.Controls.SetChildIndex($updTop, 2)
 
 $tl = $script:Tabs['tools']
 $tlTop = New-Object System.Windows.Forms.FlowLayoutPanel
-$tlTop.Dock = [System.Windows.Forms.DockStyle]::Top
-$tlTop.Height = 256
-$tlTop.Padding = New-Object System.Windows.Forms.Padding -ArgumentList @(14, 12, 14, 0)
+$tlTop.Dock = [System.Windows.Forms.DockStyle]::Fill
+$tlTop.Padding = New-Object System.Windows.Forms.Padding -ArgumentList @(14, 12, 14, 14)
 $tlTop.WrapContents = $true
+$tlTop.AutoScroll = $true
 $tl.Controls.Add($tlTop)
 
 [void](New-UIButton -Parent $tlTop -Text 'Диагностика' -X 0 -Y 0 -W 150 -H 40 `
@@ -2863,8 +2863,6 @@ $tl.Controls.Add($tlTop)
     -Back $script:Theme.Surface3 -OnClick {
         Start-Process -FilePath 'explorer.exe' -ArgumentList "`"$script:RootDir`""
     })
-[void](New-UIButton -Parent $tlTop -Text 'Очистить вывод' -X 0 -Y 0 -W 150 -H 40 `
-    -Back $script:Theme.Surface3 -OnClick { $script:DiagBox.Clear() })
 [void](New-UIButton -Parent $tlTop -Text 'Проверить соединение' -X 0 -Y 0 -W 190 -H 40 `
     -Back $script:Theme.Cyan -Fore $script:Theme.Bg -OnClick { Show-ConnectionTest })
 [void](New-UIButton -Parent $tlTop -Text 'Правила брандмауэра' -X 0 -Y 0 -W 180 -H 40 `
@@ -2933,19 +2931,72 @@ $script:HotkeyToggleCheck.Add_Click({
     try { Update-HotkeyRegistration } catch { }
 })
 
+# Буфер отчёта диагностики (без большого поля на вкладке; вывод показывается в окне)
 $script:DiagBox = New-Object System.Windows.Forms.RichTextBox
-$script:DiagBox.Dock = [System.Windows.Forms.DockStyle]::Fill
-$script:DiagBox.Margin = New-Object System.Windows.Forms.Padding -ArgumentList @(14, 8, 14, 14)
-$script:DiagBox.BackColor = Color $script:Theme.Surface
-$script:DiagBox.ForeColor = Color $script:Theme.Text
-$script:DiagBox.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+$script:DiagBox.Visible = $false
 $script:DiagBox.Font = New-Object System.Drawing.Font -ArgumentList @('Consolas', 9.5)
 $script:DiagBox.ReadOnly = $true
 $script:DiagBox.WordWrap = $false
-$tl.Controls.Add($script:DiagBox)
 
-$tl.Controls.SetChildIndex($script:DiagBox, 0)
-$tl.Controls.SetChildIndex($tlTop, 1)
+function Show-DiagWindow {
+    $f = New-Object System.Windows.Forms.Form
+    $f.Text = 'Диагностика — ZAPRET CONTROL'
+    $f.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterParent
+    $f.Size = New-Object System.Drawing.Size -ArgumentList @(900, 600)
+    $f.MinimumSize = New-Object System.Drawing.Size -ArgumentList @(640, 420)
+    $f.BackColor = Color $script:Theme.Bg
+    $f.ForeColor = Color $script:Theme.Text
+    try { if ($form.Icon) { $f.Icon = $form.Icon } } catch { }
+    $box = New-Object System.Windows.Forms.RichTextBox
+    $box.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $box.BackColor = Color $script:Theme.Surface
+    $box.ForeColor = Color $script:Theme.Text
+    $box.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+    $box.Font = New-Object System.Drawing.Font -ArgumentList @('Consolas', 9.5)
+    $box.ReadOnly = $true
+    $box.WordWrap = $false
+    $box.Text = $script:DiagBox.Text
+    $bar = New-Object System.Windows.Forms.FlowLayoutPanel
+    $bar.Dock = [System.Windows.Forms.DockStyle]::Bottom
+    $bar.Height = 52
+    $bar.Padding = New-Object System.Windows.Forms.Padding -ArgumentList @(10, 8, 10, 8)
+    $bar.BackColor = Color $script:Theme.Surface
+    $btnCopy = New-Object System.Windows.Forms.Button
+    $btnCopy.Text = 'Копировать'
+    $btnCopy.Size = New-Object System.Drawing.Size -ArgumentList @(120, 34)
+    $btnCopy.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnCopy.BackColor = Color $script:Theme.Surface3
+    $btnCopy.ForeColor = Color $script:Theme.Text
+    $btnCopy.Add_Click({ try { [Windows.Forms.Clipboard]::SetText($box.Text) } catch { } })
+    $btnSave = New-Object System.Windows.Forms.Button
+    $btnSave.Text = 'Сохранить...'
+    $btnSave.Size = New-Object System.Drawing.Size -ArgumentList @(120, 34)
+    $btnSave.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnSave.BackColor = Color $script:Theme.Blue
+    $btnSave.ForeColor = Color '#ffffff'
+    $btnSave.Add_Click({
+        try {
+            $dlg = New-Object System.Windows.Forms.SaveFileDialog
+            $dlg.Filter = 'Text files (*.txt)|*.txt|All files (*.*)|*.*'
+            $dlg.FileName = "diagnostics-$(Get-Date -Format 'yyyyMMdd-HHmmss').txt"
+            $dlg.InitialDirectory = $script:ProxyDir
+            if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+                Set-Content -LiteralPath $dlg.FileName -Value $box.Text -Encoding UTF8
+            }
+        } catch { }
+    })
+    $btnClose = New-Object System.Windows.Forms.Button
+    $btnClose.Text = 'Закрыть'
+    $btnClose.Size = New-Object System.Drawing.Size -ArgumentList @(120, 34)
+    $btnClose.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnClose.BackColor = Color $script:Theme.Surface3
+    $btnClose.ForeColor = Color $script:Theme.Text
+    $btnClose.Add_Click({ $f.Close() })
+    $bar.Controls.AddRange(@($btnCopy, $btnSave, $btnClose))
+    $f.Controls.Add($box)
+    $f.Controls.Add($bar)
+    [void]$f.ShowDialog($form)
+}
 
 function Get-MacClientInfo {
     if (-not (Test-Path -LiteralPath $script:MacClientScript)) { return $null }
@@ -2994,7 +3045,7 @@ function Run-Diagnostics {
     $script:DiagBox.Clear()
     Add-Diag '=== ДИАГНОСТИКА ZAPRET CONTROL ===' $script:Theme.Cyan
     Add-Diag "Время: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-    Add-Diag "GUI: 1.12.12 (Windows), прокси: $($script:ProxyDir)"
+    Add-Diag "GUI: 1.12.13 (Windows), прокси: $($script:ProxyDir)"
     Add-Diag ''
     $ok = $script:Theme.Green
     $bad = $script:Theme.Red
@@ -3104,6 +3155,7 @@ function Run-Diagnostics {
     Add-Diag "[i] Файлов результатов тестов: $($results.Count)" $script:Theme.Muted
     Add-Diag ''
     Add-Diag 'Готово.' $script:Theme.Cyan
+    try { Show-DiagWindow } catch { }
 }
 
 # --------------------------------------------------------------------------
@@ -3652,7 +3704,7 @@ if ($UiTest) {
                 @('top', $lgTop), @('box', $script:LogBox),
                 @('filter', $script:LogFilter))
             tools = @(
-                @('top', $tlTop), @('box', $script:DiagBox))
+                @('top', $tlTop))
             updates = @(
                 @('top', $updTop), @('info', $updInfo), @('notes', $updNotesCard),
                 @('status', $script:UpdStatusLabel), @('notesBox', $script:UpdNotes))
