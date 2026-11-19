@@ -24,7 +24,7 @@
 set -u
 
 APP_NAME="ZAPRET CONTROL"
-APP_VERSION="0.3.0-beta"
+APP_VERSION="0.3.1-beta"
 DEFAULT_HTTP_PORT=8080
 DEFAULT_SOCKS_PORT=1080
 HTTP_PORT=$DEFAULT_HTTP_PORT
@@ -141,7 +141,13 @@ list_services() {
 }
 
 set_proxy() {
-    local host="$1" service="${2:-$SERVICE}"
+    local host service
+    host="${1:-}"
+    if [ $# -ge 2 ]; then
+        service="$2"
+    else
+        service="${SERVICE:-$DEFAULT_SERVICE}"
+    fi
     networksetup -setwebproxy "$service" "$host" "$HTTP_PORT" >/dev/null 2>&1
     networksetup -setsecurewebproxy "$service" "$host" "$HTTP_PORT" >/dev/null 2>&1
     networksetup -setsocksfirewallproxy "$service" "$host" "$SOCKS_PORT" >/dev/null 2>&1
@@ -151,7 +157,12 @@ set_proxy() {
 }
 
 unset_proxy() {
-    local service="${1:-$SERVICE}"
+    local service
+    if [ $# -ge 1 ]; then
+        service="$1"
+    else
+        service="${SERVICE:-$DEFAULT_SERVICE}"
+    fi
     networksetup -setwebproxystate "$service" off >/dev/null 2>&1
     networksetup -setsecurewebproxystate "$service" off >/dev/null 2>&1
     networksetup -setsocksfirewallproxystate "$service" off >/dev/null 2>&1

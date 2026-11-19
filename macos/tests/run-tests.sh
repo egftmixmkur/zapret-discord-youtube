@@ -135,7 +135,7 @@ out_has "Прокси включён для «Wi-Fi»" && ok "включил п�
 state_has "setwebproxy|Wi-Fi|192.168.1.99|8080|on" && ok "применил введённый IP" || bad "IP не применился"
 out_has "IP или имя Windows-ПК" && ok "спросил адрес" || bad "не спросил адрес"
 conf_has 'HOST="192.168.1.99"' && ok "сохранил адрес" || bad "не сохранил"
-out_has "0.3.0-beta" && ok "показывает версию с пометкой бета" || bad "нет версии в шапке"
+out_has "0.3.1-beta" && ok "показывает версию с пометкой бета" || bad "нет версии в шапке"
 
 # --- 10. под root sudo не нужен ---
 echo "10) --off под root"
@@ -149,7 +149,7 @@ echo "11) --version"
 setup 501
 run --version
 expect_exit0
-out_has "0.3.0-beta" && ok "версия клиента 0.3.0-beta" || bad "нет версии"
+out_has "0.3.1-beta" && ok "версия клиента 0.3.1-beta" || bad "нет версии"
 [ ! -s "$SIM_LOG" ] && ok "не трогает систему" || bad "вызвал $(head -1 "$SIM_LOG")"
 
 # --- 12. локальный режим: прокси на этом Mac ---
@@ -266,5 +266,11 @@ log_has "--socks-port 11080" && ok "perl получил --socks-port" || bad "pe
 run --off
 
 echo
+# очистка оставшихся демонов
+if [ -n "${SIM_HOME:-}" ]; then
+    old=$(cat "$SIM_HOME/Library/Application Support/ZapretControl/proxy.pid" 2>/dev/null)
+    [ -n "${old:-}" ] && kill "$old" 2>/dev/null || true
+fi
+
 echo "Итого: $PASS успешно, $FAIL провалов"
 [ "$FAIL" -eq 0 ] || exit 1
