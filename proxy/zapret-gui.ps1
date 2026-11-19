@@ -49,6 +49,9 @@ $script:ConnStarted = [DateTime]::MinValue
 $script:LastConnSummary = ''
 $script:TestWasRunning = $false
 $script:LastResultStamp = ''
+$script:TestChartData = $null
+$script:TestChart = $null
+$script:OverviewChart = $null
 
 function Test-Admin {
     try {
@@ -285,6 +288,161 @@ function Get-BestFromResultFile($file) {
         if ($match) { return $match.Matches[0].Groups[1].Value.Trim() }
     } catch { }
     return ''
+}
+
+function Get-TestAnalytics($file) {
+    $result = [pscustomobject]@{
+        Items = @()
+        Best  = ''
+        Date  = $null
+        Path  = ''
+    }
+    if (-not $file) { return $result }
+    $result.Date = $file.LastWriteTime
+    $result.Path = $file.FullName
+    $result.Best = Get-BestFromResultFile $file
+    $items = New-Object System.Collections.Generic.List[object]
+    try {
+        foreach ($line in Get-Content -LiteralPath $file.FullName -ErrorAction Stop) {
+            if ($line -match '^\s*(.+?)\s*:\s*OK:\s*(\d+)\s*,\s*FAIL:\s*(\d+)\s*,\s*UNSUP:\s*(\d+)\s*,\s*BLOCKED:\s*(\d+)\s*$') {
+                $ok = [int]$matches[2]; $fail = [int]$matches[3]
+                $unsup = [int]$matches[4]; $blocked = [int]$matches[5]
+                $total = $ok + $fail + $unsup + $blocked
+                $items.Add([pscustomobject]@{
+                    Name    = $matches[1].Trim()
+                    OK      = $ok
+                    FAIL    = $fail
+                    UNSUP   = $unsup
+                    BLOCKED = $blocked
+                    Total   = $total
+                    Score   = ($ok - $fail)
+                })
+            }
+        }
+    } catch { }
+    $sorted = @($items | Sort-Object @{Expression={$_.Score};Descending=$true}, @{Expression={$_.OK};Descending=$true})
+    $result.Items = $sorted
+    return $result
+}
+
+function Update-TestCharts {
+    try {
+        $file = Get-LatestResultFile
+        $stamp = if ($file) { $file.LastWriteTime.ToString('o') + '|' + $file.Length } else { '' }
+        $script:LastResultStamp = $stamp
+        $script:TestChartData = Get-TestAnalytics $file
+        if ($script:TestChart) { $script:TestChart.Invalidate() }
+        if ($script:OverviewChart) { $script:OverviewChart.Invalidate() }
+    } catch { }
+}
+
+function Draw-ResultsChart {
+    param($sender, $e, $data, [int]$maxItems = 10, [bool]$compact = $false)
+    $g = $e.Graphics
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
+    $rect = $sender.ClientRectangle
+    $bg = New-Object System.Drawing.SolidBrush((Color $script:Theme.Surface))
+    $g.FillRectangle($bg, $rect); $bg.Dispose()
+
+    $padL = if ($compact) { 10 } else { 14 }
+    $padR = if ($compact) { 10 } else { 14 }
+    $padT = if ($compact) { 10 } else { 12 }
+    $padB = if ($compact) { 10 } else { 28 }
+    $innerW = [Math]::Max(40, $rect.Width - $padL - $padR)
+    $innerH = [Math]::Max(20, $rect.Height - $padT - $padB)
+
+    $fontTitle = New-Object System.Drawing.Font('Segoe UI Semibold', $(if ($compact) { 8.5 } else { 9.5 }))
+    $fontSmall = New-Object System.Drawing.Font('Segoe UI', $(if ($compact) { 7.5 } else { 8.25 }))
+    $brushText = New-Object System.Drawing.SolidBrush((Color $script:Theme.Text))
+    $brushMuted = New-Object System.Drawing.SolidBrush((Color $script:Theme.Muted))
+
+    $items = @()
+    $best = ''
+    if ($data -and $data.Items) { $items = @($data.Items | Select-Object -First $maxItems); $best = $data.Best }
+
+    if ($items.Count -eq 0) {
+        $msg = 'График: нет данных — запустите тесты стратегий (вкладка «Тесты»)'
+        $sf = New-Object System.Drawing.StringFormat
+        $sf.Alignment = [System.Drawing.StringAlignment]::Center
+        $sf.LineAlignment = [System.Drawing.StringAlignment]::Center
+        $msgRect = New-Object System.Drawing.RectangleF(0, 0, $rect.Width, $rect.Height)
+        $g.DrawString($msg, $fontTitle, $brushMuted, $msgRect, $sf)
+        $sf.Dispose()
+    } else {
+        $maxTotal = 1
+        foreach ($it in $items) { if ($it.Total -gt $maxTotal) { $maxTotal = $it.Total } }
+        $title = 'График результатов (топ стратегий)'
+        $g.DrawString($title, $fontTitle, $brushText, [single]$padL, [single]($padT - 2))
+        $y = $padT + 22
+        $rowH = [Math]::Max($(if ($compact) { 16 } else { 20 }), [Math]::Min($(if ($compact) { 22 } else { 28 }), [int](($innerH - 24) / [Math]::Max(1,$items.Count))))
+        $labelW = [int]([Math]::Min([Math]::Max(120, $innerW * 0.34), 260))
+        $barX = $padL + $labelW + 8
+        $barW = [Math]::Max(40, $rect.Width - $barX - $padR - $(if ($compact) { 0 } else { 80 }))
+        $barH = [Math]::Max(8, $rowH - 8)
+
+        foreach ($it in $items) {
+            if ($y + $rowH - 4 -gt $rect.Height - $padB + 6) { break }
+            $name = [string]$it.Name
+            $disp = [IO.Path]::GetFileNameWithoutExtension($name)
+            if ($disp.Length -gt 26) { $disp = $disp.Substring(0, 23) + '...' }
+            $isBest = ($best -and ($name -eq $best -or $disp -eq [IO.Path]::GetFileNameWithoutExtension($best)))
+            $nameBrush = if ($isBest) { New-Object System.Drawing.SolidBrush((Color $script:Theme.Green)) } else { New-Object System.Drawing.SolidBrush((Color $script:Theme.Text)) }
+            $g.DrawString($disp, $fontSmall, $nameBrush, [single]$padL, [single]($y + 1))
+            $nameBrush.Dispose()
+
+            $bx = $barX; $by = $y + [int](($rowH - $barH) / 2)
+            $track = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(40, 255, 255, 255))
+            $g.FillRectangle($track, $bx, $by, $barW, $barH); $track.Dispose()
+
+            $scale = [double]$barW / [double]$maxTotal
+            $segs = @(
+                @{ v = $it.OK;      c = $script:Theme.Green },
+                @{ v = $it.FAIL;    c = $script:Theme.Red },
+                @{ v = $it.BLOCKED; c = $script:Theme.Yellow },
+                @{ v = $it.UNSUP;   c = $script:Theme.Muted }
+            )
+            $cx = $bx
+            foreach ($seg in $segs) {
+                $wseg = [int]([Math]::Round($seg.v * $scale))
+                if ($wseg -le 0) { continue }
+                if ($cx + $wseg -gt $bx + $barW) { $wseg = $bx + $barW - $cx }
+                if ($wseg -le 0) { continue }
+                $b2 = New-Object System.Drawing.SolidBrush((Color $seg.c))
+                $g.FillRectangle($b2, $cx, $by, $wseg, $barH)
+                $b2.Dispose()
+                $cx += $wseg
+            }
+            $pbr = New-Object System.Drawing.Pen((Color $script:Theme.BorderLight), 1)
+            $g.DrawRectangle($pbr, $bx, $by, $barW, $barH); $pbr.Dispose()
+
+            $summary = ('OK {0}  FAIL {1}  BLK {2}' -f $it.OK, $it.FAIL, $it.BLOCKED)
+            $g.DrawString($summary, $fontSmall, $brushMuted, [single]($barX + $barW + 6), [single]($y + 1))
+            $y += $rowH
+        }
+
+        $ly = $rect.Height - $padB + 6
+        $lx = $padL
+        $legend = @(
+            @{ t = 'OK'; c = $script:Theme.Green },
+            @{ t = 'FAIL'; c = $script:Theme.Red },
+            @{ t = 'BLOCKED'; c = $script:Theme.Yellow },
+            @{ t = 'UNSUP'; c = $script:Theme.Muted }
+        )
+        foreach ($le in $legend) {
+            $lb = New-Object System.Drawing.SolidBrush((Color $le.c))
+            $g.FillRectangle($lb, $lx, $ly + 2, 10, 10); $lb.Dispose()
+            $g.DrawString($le.t, $fontSmall, $brushMuted, [single]($lx + 14), [single]$ly)
+            $lx += 80
+        }
+        if ($data.Date) {
+            $ds = $data.Date.ToString('dd.MM HH:mm')
+            $sz = $g.MeasureString($ds, $fontSmall)
+            $g.DrawString($ds, $fontSmall, $brushMuted, [single]($rect.Width - $padR - $sz.Width), [single]$ly)
+        }
+    }
+
+    $brushMuted.Dispose(); $brushText.Dispose(); $fontSmall.Dispose(); $fontTitle.Dispose()
 }
 
 function Get-StrategyInfo([string]$name) {
@@ -1251,7 +1409,7 @@ foreach ($nav in $navNames) {
 $sideVerCard = New-UICard -Parent $sidebar -X 14 -Y 514 -W 186 -H 56
 [void](New-UILabel -Parent $sideVerCard -Text 'ZAPRET CONTROL' -X 12 -Y 8 -W 160 -H 18 `
     -Size 8 -Color $script:Theme.Muted -Bold $true)
-[void](New-UILabel -Parent $sideVerCard -Text 'Версия 1.12.5' -X 12 -Y 28 -W 160 -H 20 `
+[void](New-UILabel -Parent $sideVerCard -Text 'Версия 1.12.6' -X 12 -Y 28 -W 160 -H 20 `
     -Size 10 -Color $script:Theme.Text -Bold $true)
 
 # --- status bar ---
@@ -1315,7 +1473,7 @@ function Switch-Tab([string]$key) {
         }
     }
     if ($key -eq 'logs') { Update-LogView }
-    if ($key -eq 'tests') { Update-LatestResult }
+    if ($key -eq 'tests') { Update-LatestResult; try { if ($script:TestChart) { $script:TestChart.Invalidate() } } catch { } }
     if ($key -eq 'zapret') { Update-IpsetStatus; Load-GameFilterUI }
 }
 
@@ -1392,7 +1550,7 @@ $ovInfo.Dock = [System.Windows.Forms.DockStyle]::Fill
 $ovInfo.Margin = New-Object System.Windows.Forms.Padding -ArgumentList @(14, 8, 14, 14)
 $script:OvSummary = New-UILabel -Parent $ovInfo -Text '' -X 16 -Y 40 -W 800 -H 60 `
     -Size 9.5 -Color $script:Theme.Cyan
-$script:OvInfoText = New-UILabel -Parent $ovInfo -Text '' -X 16 -Y 108 -W 800 -H 260 `
+$script:OvInfoText = New-UILabel -Parent $ovInfo -Text '' -X 16 -Y 108 -W 420 -H 180 `
     -Size 9.5 -Color $script:Theme.Text
 $script:OvInfoText.Text = @(
     '1. Нажмите «Запустить всё» — установятся задачи автозапуска, правила брандмауэра,',
@@ -1403,6 +1561,20 @@ $script:OvInfoText.Text = @(
     '4. Для Mac: автономный клиент в папке macos\ (локальный режим) или LAN через этот ПК.',
     '5. Все журналы и диагностика — на вкладках «Журналы» и «Инструменты».'
 ) -join "`r`n"
+
+$script:OverviewChart = New-Object System.Windows.Forms.Panel
+$script:OverviewChart.Location = New-Object System.Drawing.Point -ArgumentList @(450, 108)
+$script:OverviewChart.Size = New-Object System.Drawing.Size -ArgumentList @(380, 200)
+$script:OverviewChart.BackColor = Color $script:Theme.Surface
+$script:OverviewChart.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor
+    [System.Windows.Forms.AnchorStyles]::Left -bor
+    [System.Windows.Forms.AnchorStyles]::Right -bor
+    [System.Windows.Forms.AnchorStyles]::Bottom
+$script:OverviewChart.Add_Paint({
+    param($sender, $e)
+    Draw-ResultsChart -sender $sender -e $e -data $script:TestChartData -maxItems 6 -compact $true
+})
+$ovInfo.Controls.Add($script:OverviewChart)
 
 # Порядок докинга: Fill (0) прокладывается последним, затем верхние панели
 # снизу вверх (больший индекс = выше на экране).
@@ -1840,7 +2012,21 @@ $script:TestRefresh = New-UIButton -Parent $tsResultCard -Text 'Обновить
     -X 690 -Y 8 -W 110 -H 28 -Back $script:Theme.Surface3 -OnClick { Update-LatestResult }
 $script:TestRefresh.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor
     [System.Windows.Forms.AnchorStyles]::Right
-$script:TestResultBox = New-UITextBox -Parent $tsResultCard -Text '' -X 16 -Y 44 -W 800 -H 330 `
+
+$script:TestChart = New-Object System.Windows.Forms.Panel
+$script:TestChart.Location = New-Object System.Drawing.Point -ArgumentList @(16, 44)
+$script:TestChart.Size = New-Object System.Drawing.Size -ArgumentList @(800, 210)
+$script:TestChart.BackColor = Color $script:Theme.Surface
+$script:TestChart.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor
+    [System.Windows.Forms.AnchorStyles]::Left -bor
+    [System.Windows.Forms.AnchorStyles]::Right
+$script:TestChart.Add_Paint({
+    param($sender, $e)
+    Draw-ResultsChart -sender $sender -e $e -data $script:TestChartData -maxItems 10 -compact $false
+})
+$tsResultCard.Controls.Add($script:TestChart)
+
+$script:TestResultBox = New-UITextBox -Parent $tsResultCard -Text '' -X 16 -Y 262 -W 800 -H 220 `
     -Multiline $true -ReadOnly $true
 $script:TestResultBox.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor
     [System.Windows.Forms.AnchorStyles]::Left -bor
@@ -1856,10 +2042,12 @@ function Update-LatestResult {
     if (-not $file) {
         $script:TestResultBox.Text = 'Результатов пока нет. Запустите тесты.'
         $script:TestStatusLabel.Text = 'Готово. Тесты запускаются в отдельном окне PowerShell.'
+        Update-TestCharts
         return
     }
     $script:TestResultBox.Text = (Get-Content -LiteralPath $file.FullName -Raw)
     $script:TestStatusLabel.Text = "Последний результат: $($file.Name) ($($file.LastWriteTime))"
+    Update-TestCharts
 }
 
 # --------------------------------------------------------------------------
@@ -2099,7 +2287,7 @@ function Run-Diagnostics {
     $script:DiagBox.Clear()
     Add-Diag '=== ДИАГНОСТИКА ZAPRET CONTROL ===' $script:Theme.Cyan
     Add-Diag "Время: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-    Add-Diag "GUI: 1.12.5 (Windows), прокси: $($script:ProxyDir)"
+    Add-Diag "GUI: 1.12.6 (Windows), прокси: $($script:ProxyDir)"
     Add-Diag ''
     $ok = $script:Theme.Green
     $bad = $script:Theme.Red
@@ -2360,10 +2548,17 @@ function Update-ResponsiveLayout {
         $script:TestStatusLabel.Width = [Math]::Max(120, $w - 150)
         $script:TestRefresh.Location = New-Object System.Drawing.Point(
             [Math]::Max(120, $tsResultCard.ClientSize.Width - $script:TestRefresh.Width - 16), 8)
-        $script:TestResultBox.Location = New-Object System.Drawing.Point(16, 44)
+        $chartH = [Math]::Max(140, [Math]::Min(280, [int]($tsResultCard.ClientSize.Height * 0.42)))
+        if ($script:TestChart) {
+            $script:TestChart.Location = New-Object System.Drawing.Point(16, 44)
+            $script:TestChart.Width = $w
+            $script:TestChart.Height = $chartH
+        }
+        $boxY = 44 + $chartH + 8
+        $script:TestResultBox.Location = New-Object System.Drawing.Point(16, $boxY)
         $script:TestResultBox.Width = $w
         $script:TestResultBox.Height = [Math]::Max(80,
-            $tsResultCard.ClientSize.Height - 44 - 16)
+            $tsResultCard.ClientSize.Height - $boxY - 16)
 
         $w = [Math]::Max(120, $pxLeft.ClientSize.Width - 32)
         $hintTop = [Math]::Max(340, $pxLeft.ClientSize.Height - 56 - 12)
@@ -2388,10 +2583,33 @@ function Update-ResponsiveLayout {
         $w = [Math]::Max(200, $ovInfo.ClientSize.Width - 32)
         $script:OvSummary.Location = New-Object System.Drawing.Point(16, 40)
         $script:OvSummary.Width = $w
-        $script:OvInfoText.Location = New-Object System.Drawing.Point(16, 108)
-        $script:OvInfoText.Width = $w
-        $script:OvInfoText.Height = [Math]::Max(40,
-            $ovInfo.ClientSize.Height - 108 - 14)
+        $splitY = 108
+        $availH = [Math]::Max(80, $ovInfo.ClientSize.Height - $splitY - 14)
+        if ($ovInfo.ClientSize.Width -ge 820) {
+            $leftW = [Math]::Max(300, [int]($w * 0.46))
+            $chartX = 16 + $leftW + 12
+            $chartW = [Math]::Max(220, $ovInfo.ClientSize.Width - $chartX - 16)
+            $script:OvInfoText.Location = New-Object System.Drawing.Point(16, $splitY)
+            $script:OvInfoText.Width = $leftW
+            $script:OvInfoText.Height = $availH
+            if ($script:OverviewChart) {
+                $script:OverviewChart.Location = New-Object System.Drawing.Point($chartX, $splitY)
+                $script:OverviewChart.Size = New-Object System.Drawing.Size($chartW, $availH)
+                $script:OverviewChart.Visible = $true
+            }
+        } else {
+            $infoH = [Math]::Max(80, [int]($availH * 0.45))
+            $chartY = $splitY + $infoH + 8
+            $chartH = [Math]::Max(80, $ovInfo.ClientSize.Height - $chartY - 14)
+            $script:OvInfoText.Location = New-Object System.Drawing.Point(16, $splitY)
+            $script:OvInfoText.Width = $w
+            $script:OvInfoText.Height = $infoH
+            if ($script:OverviewChart) {
+                $script:OverviewChart.Location = New-Object System.Drawing.Point(16, $chartY)
+                $script:OverviewChart.Size = New-Object System.Drawing.Size($w, $chartH)
+                $script:OverviewChart.Visible = $true
+            }
+        }
 
         foreach ($key in @($script:OvValues.Keys)) {
             $value = $script:OvValues[$key]
@@ -2409,10 +2627,10 @@ function Update-ResponsiveLayout {
 
 $zpLeft.Add_Resize({ Update-ResponsiveLayout })
 $zpRight.Add_Resize({ Update-ResponsiveLayout })
-$tsResultCard.Add_Resize({ Update-ResponsiveLayout })
+$tsResultCard.Add_Resize({ Update-ResponsiveLayout; if ($script:TestChart) { $script:TestChart.Invalidate() } })
 $pxLeft.Add_Resize({ Update-ResponsiveLayout })
 $pxRight.Add_Resize({ Update-ResponsiveLayout })
-$ovInfo.Add_Resize({ Update-ResponsiveLayout })
+$ovInfo.Add_Resize({ Update-ResponsiveLayout; if ($script:OverviewChart) { $script:OverviewChart.Invalidate() } })
 $cardTable.Add_Resize({ Update-ResponsiveLayout })
 $statusBar.Add_Resize({ Update-ResponsiveLayout })
 
