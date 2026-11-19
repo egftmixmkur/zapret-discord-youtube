@@ -55,7 +55,7 @@ powershell -ExecutionPolicy Bypass -File proxy\build-installer.ps1
 
 ## macOS
 
-**Отдельный релиз:** [macos-v0.4.0](https://github.com/egftmixmkur/zapret-discord-youtube/releases/tag/macos-v0.4.0). Версии раздельные: Windows — `1.12.10`, macOS — `0.4.0`.
+**Отдельный релиз:** [macos-v0.4.0](https://github.com/egftmixmkur/zapret-discord-youtube/releases/tag/macos-v0.4.0). Версии раздельные: Windows — `1.12.11`, macOS — `0.4.0`.
 
 Сам zapret (`winws.exe` + WinDivert) работает только на Windows, поэтому
 оригинальный `winws` на Mac не запускается. В папке [`macos/`](macos/README.md)

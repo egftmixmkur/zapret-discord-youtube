@@ -31,7 +31,7 @@ $script:ListsDir   = Join-Path $script:RootDir 'lists'
 $script:BindDir    = Join-Path $script:RootDir 'bin'
 $script:MacDir     = Join-Path $script:RootDir 'macos'
 $script:MacClientScript = Join-Path $script:MacDir 'zapret-proxy.command'
-$script:AppVersion = '1.12.10'
+$script:AppVersion = '1.12.11'
 $script:UpdateRepo = 'egftmixmkur/zapret-discord-youtube'
 $script:StrategyFile = Join-Path $script:ProxyDir 'zapret-strategy.txt'
 $script:TestScript = Join-Path $script:UtilsDir 'test zapret.ps1'
@@ -1282,8 +1282,9 @@ try {
             $current = [string](Get-InstalledZapretControlVersion)
             $currentN = Get-NormalizedVersion $current
             $latestN = Get-NormalizedVersion ([string]$obj.version)
-            if ($latestN -le $currentN) { return }
+            if ($latestN -le $currentN) { try { Update-UpdatesTabFromObject -obj $obj } catch { }; return }
             $script:LatestAppUpdate = $obj
+            try { Update-UpdatesTabFromObject -obj $obj } catch { }
             try { Add-Diag "Доступно обновление ZAPRET CONTROL: $($obj.tag) (установлено: $current). Автоматическая установка..." $script:Theme.Yellow } catch { }
             try { if ($script:TrayIcon) { $script:TrayIcon.ShowBalloonTip(8000, 'ZAPRET CONTROL', "Найдено обновление $($obj.tag). Скачивание и установка автоматически...", [System.Windows.Forms.ToolTipIcon]::Info) } } catch { }
             try {
@@ -1304,6 +1305,156 @@ try {
     }
 }
 
+
+function Update-UpdatesTabFromObject([object]$obj) {
+    if (-not $script:UpdStatusLabel) { return }
+    try {
+        $current = [string](Get-InstalledZapretControlVersion)
+        $script:UpdCurrentLabel.Text = "Установлено: $current"
+        if ($null -eq $obj) {
+            $script:UpdLatestLabel.Text = 'Актуальная версия: не проверялась'
+            $script:UpdStatusLabel.Text = 'Нажмите «Проверить обновления», чтобы узнать актуальную версию.'
+            $script:UpdStatusLabel.ForeColor = Color $script:Theme.Muted
+            return
+        }
+        $script:UpdLatestLabel.Text = "Актуальная версия: $($obj.tag)"
+        $curN = Get-NormalizedVersion $current
+        $newN = Get-NormalizedVersion ([string]$obj.version)
+        if ($newN -le $curN) {
+            $script:UpdStatusLabel.Text = '✓ Установлена последняя версия'
+            $script:UpdStatusLabel.ForeColor = Color $script:Theme.Green
+        } else {
+            $script:UpdStatusLabel.Text = "Доступно обновление $($obj.tag) — можно скачать и установить"
+            $script:UpdStatusLabel.ForeColor = Color $script:Theme.Yellow
+        }
+        $notes = [string]$obj.body
+        if (-not $notes) { $notes = 'Описание релиза отсутствует.' }
+        $script:UpdNotes.Text = "Релиз: $($obj.name)`r`nСтраница: $($obj.url)`r`n`r`n$notes"
+    } catch { }
+}
+
+function Start-UpdatesTabCheckAsync {
+    if ($script:UpdCheckRunning) { return }
+    $script:UpdCheckRunning = $true
+    try {
+        $script:UpdStatusLabel.Text = 'Проверка обновлений на GitHub...'
+        $script:UpdStatusLabel.ForeColor = Color $script:Theme.Cyan
+    } catch { }
+    try {
+        $psPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        $resultFile = Join-Path $env:TEMP ("zapret-upd-tab-{0}.json" -f [Guid]::NewGuid().ToString('N'))
+        $worker = Join-Path $env:TEMP ("zapret-upd-tab-{0}.ps1" -f [Guid]::NewGuid().ToString('N'))
+        $repo = $script:UpdateRepo
+        $cur = [string](Get-InstalledZapretControlVersion)
+        $workerBody = @'
+$ErrorActionPreference = 'Stop'
+try {
+    try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
+    $resp = Invoke-RestMethod -Uri 'https://api.github.com/repos/__REPO__/releases' -Headers @{ 'User-Agent' = 'ZapretControl/__CUR__'; 'Accept' = 'application/vnd.github+json' } -TimeoutSec 12 -UseBasicParsing
+    $release = $null
+    foreach ($r in @($resp)) {
+        if ($r.draft -or $r.prerelease) { continue }
+        if ([string]$r.tag_name -match '^v\d') { $release = $r; break }
+    }
+    if (-not $release) { throw 'no release' }
+    $setup = $null; $exe = $null
+    foreach ($a in @($release.assets)) {
+        $n = [string]$a.name; $u = [string]$a.browser_download_url
+        if ($n -ieq 'ZapretControlSetup.exe') { $setup = $u }
+        elseif ($n -ieq 'ZapretControl.exe') { $exe = $u }
+    }
+    $tag = [string]$release.tag_name; $ver = $tag
+    if ($ver.StartsWith('v') -or $ver.StartsWith('V')) { $ver = $ver.Substring(1) }
+    $out = [ordered]@{ ok = $true; tag = $tag; version = $ver; name = [string]$release.name; url = [string]$release.html_url; setup = $setup; exe = $exe; body = [string]$release.body }
+    ($out | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath '__RESULT__' -Encoding UTF8
+} catch {
+    $out = [ordered]@{ ok = $false; error = $_.Exception.Message }
+    ($out | ConvertTo-Json) | Set-Content -LiteralPath '__RESULT__' -Encoding UTF8
+} finally {
+    Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+}
+'@
+        $workerBody = $workerBody.Replace('__REPO__', $repo).Replace('__CUR__', $cur.Replace("'", "''")).Replace('__RESULT__', $resultFile.Replace("'", "''"))
+        [IO.File]::WriteAllText($worker, $workerBody, [System.Text.UTF8Encoding]::new($false))
+        [void](Start-Process -FilePath $psPath -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $worker) -WindowStyle Hidden)
+        $timer = New-Object System.Windows.Forms.Timer
+        $timer.Interval = 1000
+        $deadline = (Get-Date).AddSeconds(20)
+        $state = @{ ResultFile = $resultFile; Deadline = $deadline }
+        $timer.Add_Tick({
+            $done = $false
+            try {
+                if (Test-Path -LiteralPath $state.ResultFile) {
+                    $rawTmp = Get-Content -LiteralPath $state.ResultFile -Raw -ErrorAction Stop
+                    if ($rawTmp -and $rawTmp.Trim().Length -gt 0) { $done = $true }
+                }
+            } catch { }
+            if (-not $done -and (Get-Date) -lt $state.Deadline) { return }
+            try { $timer.Stop() } catch { }
+            try { $timer.Dispose() } catch { }
+            $script:UpdCheckRunning = $false
+            if (-not $done) {
+                try { $script:UpdStatusLabel.Text = 'Не удалось получить ответ от GitHub (таймаут).' } catch { }
+                return
+            }
+            try {
+                $raw2 = Get-Content -LiteralPath $state.ResultFile -Raw -ErrorAction Stop
+                Remove-Item -LiteralPath $state.ResultFile -Force -ErrorAction SilentlyContinue
+                $obj = $raw2 | ConvertFrom-Json
+                if (-not $obj.ok) {
+                    $script:UpdStatusLabel.Text = "Ошибка проверки: $($obj.error)"
+                    $script:UpdStatusLabel.ForeColor = Color $script:Theme.Red
+                    return
+                }
+                $script:LatestAppUpdate = $obj
+                Update-UpdatesTabFromObject -obj $obj
+            } catch {
+                try { $script:UpdStatusLabel.Text = "Ошибка проверки: $($_.Exception.Message)" } catch { }
+            }
+        }.GetNewClosure())
+        $timer.Start()
+    } catch {
+        $script:UpdCheckRunning = $false
+        try { $script:UpdStatusLabel.Text = "Ошибка проверки: $($_.Exception.Message)" } catch { }
+    }
+}
+
+function Start-UpdatesTabInstall {
+    $obj = $script:LatestAppUpdate
+    if (-not $obj) {
+        try {
+            $rel = Get-LatestZapretControlRelease
+            $obj = [pscustomobject]@{
+                tag = $rel.Tag; version = $rel.Version; name = $rel.Name; url = $rel.Url
+                setup = $rel.SetupUrl; exe = $rel.ExeUrl; body = $rel.Body
+            }
+            $script:LatestAppUpdate = $obj
+            Update-UpdatesTabFromObject -obj $obj
+        } catch {
+            [Windows.Forms.MessageBox]::Show(
+                "Сначала проверьте обновления.`n`n$($_.Exception.Message)",
+                'Обновления ZAPRET CONTROL', 'OK', 'Information') | Out-Null
+            return
+        }
+    }
+    if (-not $obj.setup) {
+        try { Start-Process ([string]$obj.url) } catch { }
+        return
+    }
+    try {
+        $script:UpdStatusLabel.Text = "Скачивание и установка $($obj.tag)..."
+        $script:UpdStatusLabel.ForeColor = Color $script:Theme.Yellow
+        Start-ZapretControlSelfUpdate -setupUrl ([string]$obj.setup)
+    } catch {
+        $em = $_.Exception.Message
+        try { $script:UpdStatusLabel.Text = "Ошибка установки: $em" } catch { }
+        $open = [Windows.Forms.MessageBox]::Show(
+            "Не удалось установить обновление автоматически:`n$em`n`nОткрыть страницу релиза?",
+            'Обновления ZAPRET CONTROL', [Windows.Forms.MessageBoxButtons]::YesNo,
+            [Windows.Forms.MessageBoxIcon]::Warning)
+        if ($open -eq [Windows.Forms.DialogResult]::Yes) { try { Start-Process ([string]$obj.url) } catch { } }
+    }
+}
 
 function Copy-DiagReport {
     if ($script:DiagBox.TextLength -eq 0) { Run-Diagnostics }
@@ -1782,6 +1933,7 @@ $navNames = @(
     @{ Key = 'proxy';    Text = '  ◈  Прокси' },
     @{ Key = 'zapret';   Text = '  ◉  Zapret' },
     @{ Key = 'tests';    Text = '  ◇  Тесты' },
+    @{ Key = 'updates';  Text = '  ⇩  Обновления' },
     @{ Key = 'logs';     Text = '  ▤  Журналы' },
     @{ Key = 'tools';    Text = '  ✦  Инструменты' }
 )
@@ -1811,7 +1963,7 @@ foreach ($nav in $navNames) {
 $sideVerCard = New-UICard -Parent $sidebar -X 14 -Y 504 -W 186 -H 66
 [void](New-UILabel -Parent $sideVerCard -Text 'ZAPRET CONTROL' -X 12 -Y 10 -W 160 -H 18 `
     -Size 8 -Color $script:Theme.Accent -Bold $true)
-[void](New-UILabel -Parent $sideVerCard -Text 'Версия 1.12.10' -X 12 -Y 30 -W 160 -H 22 `
+[void](New-UILabel -Parent $sideVerCard -Text 'Версия 1.12.11' -X 12 -Y 30 -W 160 -H 22 `
     -Size 10.5 -Color $script:Theme.White -Bold $true)
 
 # --- status bar ---
@@ -1851,7 +2003,7 @@ $content.BackColor = Color $script:Theme.Bg
 $form.Controls.Add($content)
 
 $script:Tabs = @{}
-foreach ($key in @('overview', 'proxy', 'zapret', 'tests', 'logs', 'tools')) {
+foreach ($key in @('overview', 'proxy', 'zapret', 'tests', 'updates', 'logs', 'tools')) {
     $panel = New-Object System.Windows.Forms.Panel
     $panel.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panel.BackColor = Color $script:Theme.Bg
@@ -1885,6 +2037,7 @@ function Switch-Tab([string]$key) {
     if ($key -eq 'logs') { Update-LogView }
     if ($key -eq 'tests') { Update-LatestResult; try { if ($script:TestChart) { $script:TestChart.Invalidate() } } catch { } }
     if ($key -eq 'zapret') { Update-IpsetStatus; Load-GameFilterUI }
+    if ($key -eq 'updates') { try { Update-UpdatesTabFromObject -obj $script:LatestAppUpdate } catch { } }
 }
 
 # --------------------------------------------------------------------------
@@ -2561,6 +2714,78 @@ function Update-LogView {
 }
 
 # --------------------------------------------------------------------------
+#  Обновления (отдельная вкладка)
+# --------------------------------------------------------------------------
+
+$upd = $script:Tabs['updates']
+
+$updTop = New-Object System.Windows.Forms.FlowLayoutPanel
+$updTop.Dock = [System.Windows.Forms.DockStyle]::Top
+$updTop.Height = 66
+$updTop.Padding = New-Object System.Windows.Forms.Padding -ArgumentList @(14, 12, 14, 0)
+$updTop.WrapContents = $true
+$upd.Controls.Add($updTop)
+
+[void](New-UIButton -Parent $updTop -Text 'Проверить обновления' -X 0 -Y 0 -W 195 -H 40 `
+    -Back $script:Theme.Accent -OnClick { Start-UpdatesTabCheckAsync })
+[void](New-UIButton -Parent $updTop -Text 'Скачать и установить' -X 0 -Y 0 -W 195 -H 40 `
+    -Back $script:Theme.Green -Fore $script:Theme.Bg -OnClick { Start-UpdatesTabInstall })
+[void](New-UIButton -Parent $updTop -Text 'Страница релиза' -X 0 -Y 0 -W 155 -H 40 `
+    -Back $script:Theme.Surface3 -OnClick {
+        $obj = $script:LatestAppUpdate
+        if ($obj -and $obj.url) { try { Start-Process ([string]$obj.url) } catch { } }
+        else { try { Start-Process "https://github.com/$($script:UpdateRepo)/releases/latest" } catch { } }
+    })
+$script:UpdAutoCheck = New-UICheckBox -Parent $updTop -Text 'Проверять автоматически' `
+    -X 0 -Y 4 -W 220 -Checked ([bool]$script:Settings.AutoCheckAppUpdates)
+$script:UpdAutoCheck.Add_Click({
+    $script:Settings.AutoCheckAppUpdates = [bool]$script:UpdAutoCheck.Checked
+    if ($script:AutoAppUpdateCheck) { $script:AutoAppUpdateCheck.Checked = [bool]$script:UpdAutoCheck.Checked }
+    Save-GuiSettings
+})
+
+$updInfo = New-UICard -Parent $upd -X 14 -Y 78 -W 860 -H 150 -Title 'СОСТОЯНИЕ ОБНОВЛЕНИЙ'
+$updInfo.Dock = [System.Windows.Forms.DockStyle]::Top
+$updInfo.Height = 150
+$updInfo.Margin = New-Object System.Windows.Forms.Padding -ArgumentList @(14, 8, 14, 0)
+$script:UpdCurrentLabel = New-UILabel -Parent $updInfo -Text ("Установлено: " + (Get-InstalledZapretControlVersion)) `
+    -X 18 -Y 40 -W 520 -H 26 -Size 10 -Color $script:Theme.Text
+$script:UpdLatestLabel = New-UILabel -Parent $updInfo -Text 'Актуальная версия: не проверялась' `
+    -X 18 -Y 70 -W 520 -H 26 -Size 10 -Color $script:Theme.Text
+$script:UpdStatusLabel = New-UILabel -Parent $updInfo -Text 'Нажмите «Проверить обновления», чтобы узнать актуальную версию.' `
+    -X 18 -Y 102 -W 800 -H 30 -Size 11 -Color $script:Theme.Cyan -Bold $true
+
+$updNotesCard = New-UICard -Parent $upd -X 14 -Y 240 -W 860 -H 340 -Title 'ЧТО НОВОГО / ИСТОРИЯ ВЫПУСКОВ'
+$updNotesCard.Dock = [System.Windows.Forms.DockStyle]::Fill
+$updNotesCard.Margin = New-Object System.Windows.Forms.Padding -ArgumentList @(14, 8, 14, 14)
+$updNotesHost = New-Object System.Windows.Forms.Panel
+$updNotesHost.Dock = [System.Windows.Forms.DockStyle]::Fill
+$updNotesHost.Padding = New-Object System.Windows.Forms.Padding -ArgumentList @(14, 36, 14, 14)
+$updNotesCard.Controls.Add($updNotesHost)
+$script:UpdNotes = New-Object System.Windows.Forms.RichTextBox
+$script:UpdNotes.Dock = [System.Windows.Forms.DockStyle]::Fill
+$script:UpdNotes.BackColor = Color $script:Theme.Surface
+$script:UpdNotes.ForeColor = Color $script:Theme.Text
+$script:UpdNotes.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+$script:UpdNotes.Font = New-Object System.Drawing.Font -ArgumentList @('Segoe UI', 9.5)
+$script:UpdNotes.ReadOnly = $true
+$script:UpdNotes.WordWrap = $true
+$script:UpdNotes.Text = @(
+    'Обновления ZAPRET CONTROL',
+    '',
+    'Источник: GitHub Releases (egftmixmkur/zapret-discord-youtube) и version.json.',
+    'Проверка обновлений выполняется без дополнительной платы и без отдельного сервера.',
+    '',
+    'Нажмите «Проверить обновления», чтобы загрузить описание последнего релиза.'
+) -join "`r`n"
+$updNotesHost.Controls.Add($script:UpdNotes)
+try { $updNotesCard.Controls[0].BringToFront() } catch { }
+
+$upd.Controls.SetChildIndex($updNotesCard, 0)
+$upd.Controls.SetChildIndex($updInfo, 1)
+$upd.Controls.SetChildIndex($updTop, 2)
+
+# --------------------------------------------------------------------------
 #  Инструменты
 # --------------------------------------------------------------------------
 
@@ -2612,8 +2837,8 @@ $tl.Controls.Add($tlTop)
     -Back $script:Theme.Surface3 -OnClick {
         Start-Process -FilePath 'explorer.exe' -ArgumentList "`"$script:ProxyDir`""
     })
-[void](New-UIButton -Parent $tlTop -Text 'Обновить ZAPRET CONTROL' -X 0 -Y 0 -W 230 -H 40 `
-    -Back $script:Theme.Accent -OnClick { Invoke-AppUpdateCheck -silent $false -autoInstall $false })
+[void](New-UIButton -Parent $tlTop -Text 'Обновления (открыть вкладку)' -X 0 -Y 0 -W 230 -H 40 `
+    -Back $script:Theme.Accent -OnClick { Switch-Tab 'updates' })
 [void](New-UIButton -Parent $tlTop -Text 'Обновления zapret (старое)' -X 0 -Y 0 -W 210 -H 40 `
     -Back $script:Theme.Surface3 -OnClick {
         $bat = Join-Path $script:RootDir 'service.bat'
@@ -2641,6 +2866,7 @@ $script:AutoAppUpdateCheck = New-UICheckBox -Parent $tlTop -Text 'Проверя
     -X 0 -Y 4 -W 300 -Checked ([bool]$script:Settings.AutoCheckAppUpdates)
 $script:AutoAppUpdateCheck.Add_Click({
     $script:Settings.AutoCheckAppUpdates = [bool]$script:AutoAppUpdateCheck.Checked
+    if ($script:UpdAutoCheck) { $script:UpdAutoCheck.Checked = [bool]$script:AutoAppUpdateCheck.Checked }
     Save-GuiSettings
 })
 
@@ -2705,7 +2931,7 @@ function Run-Diagnostics {
     $script:DiagBox.Clear()
     Add-Diag '=== ДИАГНОСТИКА ZAPRET CONTROL ===' $script:Theme.Cyan
     Add-Diag "Время: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-    Add-Diag "GUI: 1.12.10 (Windows), прокси: $($script:ProxyDir)"
+    Add-Diag "GUI: 1.12.11 (Windows), прокси: $($script:ProxyDir)"
     Add-Diag ''
     $ok = $script:Theme.Green
     $bad = $script:Theme.Red
@@ -3294,11 +3520,14 @@ if ($UiTest) {
                 @('filter', $script:LogFilter))
             tools = @(
                 @('top', $tlTop), @('box', $script:DiagBox))
+            updates = @(
+                @('top', $updTop), @('info', $updInfo), @('notes', $updNotesCard),
+                @('status', $script:UpdStatusLabel), @('notesBox', $script:UpdNotes))
         }
         $dumpTabs = {
             param([string]$prefix)
             $content.PerformLayout()
-            foreach ($key in @('overview', 'proxy', 'zapret', 'tests', 'logs', 'tools')) {
+            foreach ($key in @('overview', 'proxy', 'zapret', 'tests', 'updates', 'logs', 'tools')) {
                 Switch-Tab $key
                 $panel = $script:Tabs[$key]
                 $content.PerformLayout()
@@ -3366,7 +3595,8 @@ $form.Add_KeyDown({
         if ($eventArgs.Control) {
             $map = @{
                 'D1' = 'overview'; 'D2' = 'proxy'; 'D3' = 'zapret'
-                'D4' = 'tests';    'D5' = 'logs';  'D6' = 'tools'
+                'D4' = 'tests';    'D5' = 'logs';  'D6' = 'tools';
+                'D7' = 'updates'
             }
             $key = [string]$eventArgs.KeyCode
             if ($map.ContainsKey($key)) {

@@ -1,5 +1,5 @@
 {
-  "version": "1.12.10",
-  "url": "https://github.com/egftmixmkur/zapret-discord-youtube/releases/download/v1.12.10/ZapretControlSetup.exe",
-  "notes": "Windows 1.12.10: обновлённый визуальный стиль оболочки, автообновление с автоматической установкой при проверке, улучшения стабильности."
+  "version": "1.12.11",
+  "url": "https://github.com/egftmixmkur/zapret-discord-youtube/releases/download/v1.12.11/ZapretControlSetup.exe",
+  "notes": "Windows 1.12.11: отдельная вкладка «Обновления» с проверкой, установкой и историей релизов; автоматическая установка обновлений сохранена."
 }
