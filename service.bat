@@ -1,5 +1,5 @@
-@echo off
-set "LOCAL_VERSION=1.10.4"
+﻿@echo off
+set "LOCAL_VERSION=1.12.9"
 
 :: External commands
 if "%~1"=="status_zapret" (
@@ -370,13 +370,13 @@ goto menu
 chcp 437 > nul
 cls
 
-:: Set current version and URLs
-set "GITHUB_VERSION_URL=https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/main/.service/version.txt"
-set "GITHUB_RELEASE_URL=https://github.com/Flowseal/zapret-discord-youtube/releases/tag/"
-set "GITHUB_DOWNLOAD_URL=https://github.com/Flowseal/zapret-discord-youtube/releases/latest"
+:: Set current version and URLs (this fork: egftmixmkur, GitHub Releases + version.json)
+set "GITHUB_VERSION_URL=https://raw.githubusercontent.com/egftmixmkur/zapret-discord-youtube/main/version.json"
+set "GITHUB_RELEASE_URL=https://github.com/egftmixmkur/zapret-discord-youtube/releases/tag/"
+set "GITHUB_DOWNLOAD_URL=https://github.com/egftmixmkur/zapret-discord-youtube/releases/latest"
 
-:: Get the latest version from GitHub
-for /f "delims=" %%A in ('powershell -NoProfile -Command "(Invoke-WebRequest -Uri \"%GITHUB_VERSION_URL%\" -Headers @{\"Cache-Control\"=\"no-cache\"} -UseBasicParsing -TimeoutSec 5).Content.Trim()" 2^>nul') do set "GITHUB_VERSION=%%A"
+:: Get the latest version from GitHub (version.json: { "version": "x.y.z", ... })
+for /f "delims=" %%A in ('powershell -NoProfile -Command "try { $ErrorActionPreference='Stop'; try{[Net.ServicePointManager]::SecurityProtocol=[Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12}catch{}; $o=Invoke-RestMethod -Uri '%GITHUB_VERSION_URL%' -Headers @{'Cache-Control'='no-cache'} -UseBasicParsing -TimeoutSec 8; [string]$o.version } catch { '' }" 2^>nul') do set "GITHUB_VERSION=%%A"
 
 :: Error handling
 if not defined GITHUB_VERSION (
@@ -386,8 +386,12 @@ if not defined GITHUB_VERSION (
     goto menu
 )
 
-:: Version comparison
-if "%LOCAL_VERSION%"=="%GITHUB_VERSION%" (
+:: Version comparison (strip leading v)
+set "CMP_LOCAL=%LOCAL_VERSION%"
+set "CMP_REMOTE=%GITHUB_VERSION%"
+if /i "%CMP_LOCAL:~0,1%"=="v" set "CMP_LOCAL=%CMP_LOCAL:~1%"
+if /i "%CMP_REMOTE:~0,1%"=="v" set "CMP_REMOTE=%CMP_REMOTE:~1%"
+if "%CMP_LOCAL%"=="%CMP_REMOTE%" (
     echo Latest version installed: %LOCAL_VERSION%
     
     if "%1"=="soft" exit 
@@ -396,10 +400,10 @@ if "%LOCAL_VERSION%"=="%GITHUB_VERSION%" (
 ) 
 
 echo New version available: %GITHUB_VERSION%
-echo Release page: %GITHUB_RELEASE_URL%%GITHUB_VERSION%
+echo Release page: %GITHUB_RELEASE_URL%v%GITHUB_VERSION%
 
 echo Opening the download page...
-start "" "%GITHUB_DOWNLOAD_URL%"
+start "" "%GITHUB_RELEASE_URL%v%GITHUB_VERSION%"
 
 
 if "%1"=="soft" exit 

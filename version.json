@@ -1,0 +1,5 @@
+{
+  "version": "1.12.9",
+  "url": "https://github.com/egftmixmkur/zapret-discord-youtube/releases/download/v1.12.9/ZapretControlSetup.exe",
+  "notes": "Исправления стабильности GUI, графики результатов тестов, встроенная проверка обновлений через GitHub Releases."
+}
