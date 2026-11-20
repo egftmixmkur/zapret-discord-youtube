@@ -16,7 +16,7 @@ $ErrorActionPreference = 'Stop'
 
 $dir = $PSScriptRoot
 $root = Split-Path -Parent $dir
-$version = '1.12.13'
+$version = '1.12.14'
 $module = Join-Path $dir 'tools\ps2exe\ps2exe.psd1'
 $templatePath = Join-Path $dir 'installer\setup-template.ps1'
 $icon = Join-Path $dir 'zapret.ico'
@@ -67,7 +67,7 @@ $generated = Join-Path $env:TEMP ('zapret-setup-' + [Guid]::NewGuid().ToString('
 try {
     Write-Output 'Staging files...'
     # bin, lists and utils are shipped as-is (user data is preserved by the installer).
-    Copy-Filtered (Join-Path $root 'bin') (Join-Path $stage 'bin') @('__pycache__', '*.pyc')
+    Copy-Filtered (Join-Path $root 'bin') (Join-Path $stage 'bin') @('__pycache__', '*.pyc', '*.bak*', '*stock*', '*.old')
     Copy-Filtered (Join-Path $root 'lists') (Join-Path $stage 'lists') @(
         '*.tmp', '*.test-backup.txt')
     Copy-Filtered (Join-Path $root 'utils') (Join-Path $stage 'utils') @(

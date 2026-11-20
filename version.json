@@ -1,5 +1,5 @@
 {
-  "version": "1.12.13",
-  "url": "https://github.com/egftmixmkur/zapret-discord-youtube/releases/download/v1.12.13/ZapretControlSetup.exe",
-  "notes": "Windows 1.12.13: исправлен интерфейс вкладки «Инструменты» (убрано пустое поле вывода, диагностика открывается в отдельном окне), сохранены хоткей вкл/выкл обхода, быстрый доступ к спискам и вкладка «Обновления»."
+  "version": "1.12.14",
+  "url": "https://github.com/egftmixmkur/zapret-discord-youtube/releases/download/v1.12.14/ZapretControlSetup.exe",
+  "notes": "Windows 1.12.14: улучшен движок обхода DPI (winws/nfqws, сборка из исходников zapret) — случайные смещения fooling-пакетов (badseq/ts) по умолчанию для меньшей заметности, явные параметры стратегий сохраняются; обновлены библиотеки движка (cygwin1.dll, добавлен cygz.dll), пересобраны GUI и установщик."
 }

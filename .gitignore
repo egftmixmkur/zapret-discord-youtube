@@ -31,3 +31,6 @@ proxy/__pycache__/
 *.lnk
 Thumbs.db
 desktop.ini
+# Vendored upstream source (extracted from user-provided archives), build artifacts
+upstream/
+*.zip

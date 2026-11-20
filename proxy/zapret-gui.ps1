@@ -31,7 +31,7 @@ $script:ListsDir   = Join-Path $script:RootDir 'lists'
 $script:BindDir    = Join-Path $script:RootDir 'bin'
 $script:MacDir     = Join-Path $script:RootDir 'macos'
 $script:MacClientScript = Join-Path $script:MacDir 'zapret-proxy.command'
-$script:AppVersion = '1.12.13'
+$script:AppVersion = '1.12.14'
 $script:UpdateRepo = 'egftmixmkur/zapret-discord-youtube'
 $script:StrategyFile = Join-Path $script:ProxyDir 'zapret-strategy.txt'
 $script:TestScript = Join-Path $script:UtilsDir 'test zapret.ps1'
@@ -2009,7 +2009,7 @@ foreach ($nav in $navNames) {
 $sideVerCard = New-UICard -Parent $sidebar -X 14 -Y 504 -W 186 -H 66
 [void](New-UILabel -Parent $sideVerCard -Text 'ZAPRET CONTROL' -X 12 -Y 10 -W 160 -H 18 `
     -Size 8 -Color $script:Theme.Accent -Bold $true)
-[void](New-UILabel -Parent $sideVerCard -Text 'Версия 1.12.13' -X 12 -Y 30 -W 160 -H 22 `
+[void](New-UILabel -Parent $sideVerCard -Text 'Версия 1.12.14' -X 12 -Y 30 -W 160 -H 22 `
     -Size 10.5 -Color $script:Theme.White -Bold $true)
 
 # --- status bar ---
@@ -3045,7 +3045,7 @@ function Run-Diagnostics {
     $script:DiagBox.Clear()
     Add-Diag '=== ДИАГНОСТИКА ZAPRET CONTROL ===' $script:Theme.Cyan
     Add-Diag "Время: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-    Add-Diag "GUI: 1.12.13 (Windows), прокси: $($script:ProxyDir)"
+    Add-Diag "GUI: 1.12.14 (Windows), прокси: $($script:ProxyDir)"
     Add-Diag ''
     $ok = $script:Theme.Green
     $bad = $script:Theme.Red
