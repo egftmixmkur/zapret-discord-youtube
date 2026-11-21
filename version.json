@@ -1,5 +1,5 @@
 {
   "version": "1.12.15",
   "url": "https://github.com/egftmixmkur/zapret-discord-youtube/releases/download/v1.12.15/ZapretControlSetup.exe",
-  "notes": "Windows 1.12.15: улучшенный движок обхода DPI (winws/nfqws + актуальные зависимости), расширенное тестирование/автоподбор и онлайн-стратегии (Flowseal/bol-van) с безопасной загрузкой и авто-выбором; полный охват стратегий (general*.bat, импортируемые Net-стратегии) и диагностика GUI. macOS 0.5.0: standalone-клиент на базе нативного tpws (SOCKS) + HTTP bridge, обновлённые CLI/GUI wrapper, тесты и CI."
+  "notes": "Windows 1.12.15: обновлён движок обхода DPI (winws/nfqws) и актуальные зависимости; расширены диагностика GUI, автоподбор стратегий и тестирование general*.bat, включая импортируемые Net-стратегии; добавлены онлайн-стратегии (Flowseal/bol-van) с безопасной загрузкой, фильтрацией и авто-выбором. macOS 0.5.0: standalone-клиент на базе нативного tpws (SOCKS) + локальный HTTP CONNECT bridge, обновлённые CLI/GUI wrapper, установка/автозапуск/doctor/logs, тесты и CI. Ограничение: packet-level WinDivert-аналог на macOS недоступен; режим stream-level, QUIC/UDP 443 не обрабатывается."
 }
