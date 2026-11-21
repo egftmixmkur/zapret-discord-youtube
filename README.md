@@ -43,7 +43,7 @@
    подсетей и запустит прокси + zapret.
 2. Либо скачай `proxy\ZapretControlSetup.exe` и поставь как обычную программу
    (папка установки, ярлыки, автозапуск, удаление через «Программы и
-   компоненты»). Для macOS скачай отдельный релиз `macos-v0.5.0` (см. раздел macOS).
+   компоненты»).
 3. Настройки других устройств (адрес прокси в Wi-Fi) — на вкладке «Прокси»
    в ZAPRET CONTROL.
 
@@ -64,7 +64,7 @@ powershell -ExecutionPolicy Bypass -File proxy\build-installer.ps1
 
 ## macOS
 
-**Отдельный релиз:** [macos-v0.5.0](https://github.com/egftmixmkur/zapret-discord-youtube/releases/tag/macos-v0.5.0). Версии раздельные: Windows — `1.12.15`, macOS — `0.4.0`.
+**Текущая версия в репозитории:** Windows `1.12.15`, macOS `0.5.0` (standalone, native `tpws` + HTTP bridge).
 
 Сам zapret (`winws.exe` + WinDivert) работает только на Windows, поэтому
 оригинальный `winws` на Mac не запускается. В папке [`macos/`](macos/README.md)

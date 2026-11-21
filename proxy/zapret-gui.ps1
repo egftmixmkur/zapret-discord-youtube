@@ -2073,7 +2073,7 @@ foreach ($nav in $navNames) {
 $sideVerCard = New-UICard -Parent $sidebar -X 14 -Y 504 -W 186 -H 66
 [void](New-UILabel -Parent $sideVerCard -Text 'ZAPRET CONTROL' -X 12 -Y 10 -W 160 -H 18 `
     -Size 8 -Color $script:Theme.Accent -Bold $true)
-[void](New-UILabel -Parent $sideVerCard -Text 'Версия 1.12.14' -X 12 -Y 30 -W 160 -H 22 `
+[void](New-UILabel -Parent $sideVerCard -Text ("Версия " + $script:AppVersion) -X 12 -Y 30 -W 160 -H 22 `
     -Size 10.5 -Color $script:Theme.White -Bold $true)
 
 # --- status bar ---
