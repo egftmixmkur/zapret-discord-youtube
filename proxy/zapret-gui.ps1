@@ -1118,16 +1118,32 @@ function Save-DiagReport {
 }
 
 function Get-InstalledZapretControlVersion {
+    # Prefer the currently running executable/build version to avoid false "old version installed"
+    # when another copy exists in Program Files or elsewhere.
+    try {
+        $procPath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+        if ($procPath -and (Test-Path -LiteralPath $procPath)) {
+            $name = [IO.Path]::GetFileName($procPath)
+            if ($name -ieq 'ZapretControl.exe') {
+                $pv = [string](Get-Item -LiteralPath $procPath -ErrorAction Stop).VersionInfo.ProductVersion
+                $fv = [string](Get-Item -LiteralPath $procPath -ErrorAction Stop).VersionInfo.FileVersion
+                $v = if ($pv) { $pv.Trim() } elseif ($fv) { $fv.Trim() } else { '' }
+                if ($v) { return $v }
+            }
+        }
+    } catch { }
+
     $candidates = @(
+        (Join-Path $script:ProxyDir 'ZapretControl.exe'),
         (Join-Path ${env:ProgramFiles} 'ZapretControl\proxy\ZapretControl.exe'),
         (Join-Path ${env:ProgramFiles(x86)} 'ZapretControl\proxy\ZapretControl.exe'),
-        (Join-Path $env:LOCALAPPDATA 'Programs\ZapretControl\proxy\ZapretControl.exe'),
-        (Join-Path $script:ProxyDir 'ZapretControl.exe')
+        (Join-Path $env:LOCALAPPDATA 'Programs\ZapretControl\proxy\ZapretControl.exe')
     ) | Where-Object { $_ -and $_ -ne '' } | Select-Object -Unique
     foreach ($p in $candidates) {
         try {
             if (Test-Path -LiteralPath $p) {
-                $v = [string](Get-Item -LiteralPath $p -ErrorAction Stop).VersionInfo.FileVersion
+                $v = [string](Get-Item -LiteralPath $p -ErrorAction Stop).VersionInfo.ProductVersion
+                if (-not $v) { $v = [string](Get-Item -LiteralPath $p -ErrorAction Stop).VersionInfo.FileVersion }
                 if ($v) { return $v.Trim() }
             }
         } catch { }
