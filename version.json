@@ -1,5 +1,5 @@
 {
-  "version": "1.12.14",
-  "url": "https://github.com/egftmixmkur/zapret-discord-youtube/releases/download/v1.12.14/ZapretControlSetup.exe",
-  "notes": "Windows 1.12.14: улучшен движок обхода DPI (winws/nfqws, сборка из исходников zapret) — случайные смещения fooling-пакетов (badseq/ts) по умолчанию для меньшей заметности, явные параметры стратегий сохраняются; обновлены библиотеки движка (cygwin1.dll, добавлен cygz.dll), пересобраны GUI и установщик."
+  "version": "1.12.15",
+  "url": "https://github.com/egftmixmkur/zapret-discord-youtube/releases/download/v1.12.15/ZapretControlSetup.exe",
+  "notes": "Windows 1.12.15: улучшенный движок обхода DPI (winws/nfqws + актуальные зависимости), расширенное тестирование/автоподбор и онлайн-стратегии (Flowseal/bol-van) с безопасной загрузкой и авто-выбором; полный охват стратегий (general*.bat, импортируемые Net-стратегии) и диагностика GUI. macOS 0.5.0: standalone-клиент на базе нативного tpws (SOCKS) + HTTP bridge, обновлённые CLI/GUI wrapper, тесты и CI."
 }

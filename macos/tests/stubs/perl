@@ -1,18 +1,61 @@
 #!/bin/bash
-# Заглушка perl для эмулятора: изображает фоновый локальный прокси.
-# Пишет свой pid в файл из --pid и живёт до SIGTERM.
+# Test stub for perl.
+# - http-bridge.pl --selftest / -c: behave as success without daemonizing (real checks run in CI steps).
+# - http-bridge.pl daemon: emulate daemonizing bridge, write --pid with live background pid, keep running.
 echo "perl $*" >>"${SIM_LOG:-/dev/null}"
+
+is_bridge=0
 pidfile=""
-while [ $# -gt 0 ]; do
-    case "$1" in
-        --pid) pidfile="${2:-}"; shift ;;
-    esac
-    shift
+want_selftest=0
+want_check=0
+prev=""
+for a in "$@"; do
+  case "$a" in
+    *http-bridge.pl) is_bridge=1 ;;
+    --selftest) want_selftest=1 ;;
+    -c) want_check=1 ;;
+  esac
+  if [ "$prev" = "--pid" ]; then pidfile="$a"; prev=""; continue; fi
+  case "$a" in
+    --pid) prev="--pid" ;;
+    --pid=*) pidfile="${a#--pid=}" ;;
+  esac
+  prev="$a"
 done
-if [ -n "$pidfile" ]; then
+
+if [ "$is_bridge" -eq 1 ] && { [ "$want_selftest" -eq 1 ] || [ "$want_check" -eq 1 ]; }; then
+  if [ "$want_check" -eq 1 ]; then
+    echo "syntax OK"
+  else
+    echo "selftest: OK"
+  fi
+  exit 0
+fi
+
+if [ "$is_bridge" -eq 1 ]; then
+  # Emulate daemonize so that nohup+& caller doesn't wait on us and pidfile points to a live process.
+  if [ "${SIM_BRIDGE_FORKED:-0}" != "1" ]; then
+    export SIM_BRIDGE_FORKED=1
+    nohup "$0" "$@" >/dev/null 2>&1 &
+    exit 0
+  fi
+  if [ -n "$pidfile" ]; then
+    mkdir -p "$(dirname "$pidfile")" 2>/dev/null || true
     echo $$ >"$pidfile"
+  fi
+  trap 'rm -f "$pidfile"; exit 0' TERM INT
+  while :; do sleep 1; done
+fi
+
+# default behavior
+if [ -n "$pidfile" ]; then
+  if [ "${SIM_PERL_FORKED:-0}" != "1" ]; then
+    export SIM_PERL_FORKED=1
+    nohup "$0" "$@" >/dev/null 2>&1 &
+    exit 0
+  fi
+  mkdir -p "$(dirname "$pidfile")" 2>/dev/null || true
+  echo $$ >"$pidfile"
 fi
 trap 'rm -f "$pidfile"; exit 0' TERM INT
-while :; do
-    sleep 1
-done
+while :; do sleep 1; done

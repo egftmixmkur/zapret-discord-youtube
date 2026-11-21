@@ -1,206 +1,103 @@
-# macOS-клиент ZAPRET CONTROL 0.4.0
+# ZAPRET CONTROL for macOS (0.5.0)
 
-**Версия клиента: 0.4.0.** Версии Windows-панели и macOS-клиента
-нумеруются раздельно: Windows — `1.12.4`, macOS — `0.4.0`.
-Проверить версию: `./zapret-proxy.command --version`.
+Standalone macOS client for DPI bypass using a **native `tpws` engine** (zapret) in SOCKS mode.
+No Windows host is required for local mode.
 
-Клиент работает на Mac самостоятельно: поднимает локальный прокси и включает
-системный прокси macOS на `127.0.0.1`. Windows-ПК не нужен (но поддерживается
-как запасной режим).
+## What changed in 0.5.0
 
-## Как это работает
+- **Local mode is now powered by native `tpws` (Mac core)** instead of the old Perl-only split proxy.
+- `zapret-proxy.command` manages the engine lifecycle, system proxy settings, logs, autostart, install, and diagnostics.
+- A lightweight local HTTP bridge (`lib/http-bridge.pl`) forwards system HTTP/HTTPS proxy traffic to local `tpws` SOCKS.
+- Engine sources and build script are included: `macos/engine/tpws-src` + `macos/engine/build.sh`.
 
-`winws.exe` использует драйвер **WinDivert** и Windows Filtering Platform.
-В macOS их нет, поэтому оригинальный zapret на Mac не запускается.
+> Note: macOS does not provide a WinDivert equivalent. The native zapret engine for macOS/BSD is `tpws`
+> (stream-level TCP desync/tampering in proxy mode). This client uses `tpws --socks` with configurable desync profiles.
 
-Локальный режим делает другое: принимает HTTP/HTTPS(SOCKS5) на `127.0.0.1` и
-отправляет TLS ClientHello двумя сегментами, так что SNI попадает в разные
-части потока. Многие DPI-системы не склеивают сегменты и пропускают соединение
-без вмешательства в содержимое (TLS и сертификаты остаются подлинными).
+## Modes
 
-Это не «полный» эквивалент всех стратегий `winws` и не помогает, если
-блокировка идёт не по SNI/DPI-паттерну, а по IP, по DNS-ответу без обхода,
-по QUIC/UDP или по другим признакам. Для таких случаев оставлен LAN-режим
-через Windows-ПК с zapret.
+- **Local (standalone):** runs native `tpws` on this Mac and configures macOS system proxy to `127.0.0.1`.
+- **LAN:** routes this Mac through an existing proxy on a Windows host running zapret/winws (no local engine started).
 
-## Графическая оболочка (GUI)
+## Requirements
 
-В комплекте есть приложение **`ZapretControl.app`** — графическая оболочка поверх
-`zapret-proxy.command` (нативные диалоги macOS через AppleScript/osascript).
+- macOS with `networksetup`, `bash`, `perl`, `curl` (standard on macOS).
+- **Xcode Command Line Tools** to build the native engine (`xcode-select --install`) if a prebuilt `tpws` binary is not present.
 
-- Запуск: откройте `ZapretControl.app` двойным кликом (Finder).
-- Показывает текущий режим/статус и даёт действия: локальный режим (без Windows),
-  LAN-режим (указать IP Windows-ПК), выключение, перезапуск, проверка связи,
-  статус/диагностика/журнал, выбор сетевого подключения, автозапуск и установка.
-- При действиях, требующих прав администратора (изменение системного прокси),
-  macOS покажет стандартный запрос пароля.
-- Логика обхода и настройки те же, что у CLI; конфигурация общая
-  (`~/Library/Application Support/ZapretControl/`).
-
-Если macOS блокирует запуск неподписанного приложения (Gatekeeper), разрешите
-его в «Системные настройки → Конфиденциальность и безопасность» или откройте
-через контекстное меню «Открыть».
-## Быстрый старт (локально, без Windows)
+## Quick start (local, standalone)
 
 ```bash
 cd macos
-chmod +x zapret-proxy.command
+chmod +x zapret-proxy.command engine/build.sh
+./zapret-proxy.command --build-engine   # builds bin/tpws from included sources (once)
 ./zapret-proxy.command --local
-```
-
-Команда запустит локальный прокси на `127.0.0.1:8080` (HTTP) и
-`127.0.0.1:1080` (SOCKS5), включит системный прокси для текущего подключения
-и сохранит настройки. Для изменения системных настроек потребуется пароль
-администратора macOS.
-
-Проверка, перезапуск и выключение:
-
-```bash
 ./zapret-proxy.command --status
 ./zapret-proxy.command --test
-./zapret-proxy.command --doctor      # диагностика
-./zapret-proxy.command --logs        # журнал локального прокси
-./zapret-proxy.command --restart     # перезапустить текущий режим
-./zapret-proxy.command --off
 ```
 
-`--off` останавливает локальный прокси и возвращает системные настройки
-прокси в исходное состояние.
+`--local` starts `tpws` (SOCKS5 DPI-desync) + HTTP bridge and enables system HTTP/HTTPS/SOCKS proxy for the selected network service.
 
-## Установка и автозапуск
-
-```bash
-./zapret-proxy.command --install
-```
-
-Клиент копируется в `~/Applications/ZapretControl/` вместе с `lib/desync-proxy.pl`.
-Запуск после установки:
-
-```bash
-~/Applications/ZapretControl/zapret-proxy.command
-```
-
-Автозапуск локального прокси при входе в систему (через LaunchAgent):
-
-```bash
-~/Applications/ZapretControl/zapret-proxy.command --local
-~/Applications/ZapretControl/zapret-proxy.command --autostart on
-```
-
-Отключить автозапуск:
-
-```bash
-./zapret-proxy.command --autostart off
-```
-
-Удаление клиента и агента автозапуска:
-
-```bash
-./zapret-proxy.command --uninstall
-```
-
-Конфигурация и журнал хранятся отдельно в
-`~/Library/Application Support/ZapretControl/` и при удалении клиента не стираются
-(их можно удалить вручную).
-
-## LAN-режим (через Windows-ПК с zapret)
-
-Если локальный режим не помогает или нужен обход именно стратегиями `winws`,
-можно направить трафик Mac через прокси на Windows-ПК, где запущен zapret:
+## LAN mode (via Windows zapret host)
 
 ```bash
 ./zapret-proxy.command --on 192.168.1.10
+./zapret-proxy.command --off
 ```
 
-Требования: на ПК запущен `proxy\start-all.bat` или панель ZAPRET CONTROL
-(вкладка «Прокси»), Mac и ПК в одной сети, порт 8080 открыт.
-Адрес ПК можно посмотреть в ZAPRET CONTROL или командой `ipconfig`.
-
-## Меню
-
-`./zapret-proxy.command` без аргументов открывает меню:
-
-1. **LAN** — указать IP Windows-ПК и включить прокси.
-2. **Локальный режим** — запустить обход на этом Mac.
-3. Выключить прокси (и остановить локальный прокси).
-4. Перезапустить текущий режим.
-5. Показать статус.
-6. Проверить связь.
-7. Выбрать сетевое подключение (Wi-Fi, Ethernet и т.д.).
-8. Показать журнал локального прокси.
-9. Диагностика.
-10. Установить клиент в `~/Applications`.
-11. Включить/выключить автозапуск.
-
-## Режим для скриптов
+## Commands
 
 ```bash
-./zapret-proxy.command --local                   # локальный режим
-./zapret-proxy.command --on 192.168.1.10         # LAN-режим
-./zapret-proxy.command --restart                 # перезапустить текущий режим
-./zapret-proxy.command --off                     # выключить всё
-./zapret-proxy.command --status                  # статус
-./zapret-proxy.command --doctor                  # диагностика
-./zapret-proxy.command --test                    # проверка
-./zapret-proxy.command --logs [N]                # журнал (последние N строк)
-./zapret-proxy.command --service "Ethernet"      # другое подключение
-./zapret-proxy.command --http-port 8080 --socks-port 1080  # порты
-./zapret-proxy.command --install                 # установка
-./zapret-proxy.command --uninstall               # удаление
-./zapret-proxy.command --autostart on|off        # автозапуск
-./zapret-proxy.command --split 0 --delay 0       # параметры split (экспертно)
-./zapret-proxy.command --version                 # версия
+./zapret-proxy.command --local                      # standalone local mode (native tpws)
+./zapret-proxy.command --on <IP>                    # LAN mode via Windows host
+./zapret-proxy.command --off                        # disable proxy / stop local engine
+./zapret-proxy.command --restart                    # restart current mode
+./zapret-proxy.command --status                     # status
+./zapret-proxy.command --doctor                     # diagnostics
+./zapret-proxy.command --test [IP]                  # connectivity test
+./zapret-proxy.command --logs [N]                   # tail logs
+./zapret-proxy.command --service "Wi-Fi"            # select network service
+./zapret-proxy.command --http-port 8080 --socks-port 1080
+./zapret-proxy.command --desync "--split-pos=1,midsld --disorder --tlsrec=midsld+1"
+./zapret-proxy.command --build-engine               # build native tpws from macos/engine/tpws-src
+./zapret-proxy.command --install                    # install to ~/Applications/ZapretControl
+./zapret-proxy.command --uninstall
+./zapret-proxy.command --autostart on|off           # LaunchAgent (local mode)
+./zapret-proxy.command --version
 ```
 
-## Параметры и файлы
+## DPI desync profile
 
-| Путь / параметр | Назначение |
+Default profile (can be changed with `--desync` and saved in config):
+
+```
+--split-pos=1,midsld --disorder --tlsrec=midsld+1
+```
+
+You can use other `tpws` tampering options supported on macOS (e.g. `--split-any-protocol`, `--oob`, `--mss`, hostlists/ipsets if configured). Run `./bin/tpws --help` after build for full options.
+
+## GUI
+
+`ZapretControl.app` is a lightweight AppleScript wrapper around `zapret-proxy.command` (run from Finder/dock).
+It requires the CLI/resources inside the app bundle or installed client.
+
+## Files and paths
+
+| Path | Purpose |
 |---|---|
-| `127.0.0.1:8080` | HTTP/HTTPS-прокси (локальный режим, по умолчанию) |
-| `127.0.0.1:1080` | SOCKS5-прокси (локальный режим, по умолчанию) |
-| `--http-port N` / `--socks-port N` | пользовательские порты (сохраняются в конфиг) |
-| `~/Library/Application Support/ZapretControl/proxy.conf` | режим, адрес, подключение |
-| `~/Library/Application Support/ZapretControl/proxy.log` | журнал локального прокси |
-| `~/Library/Application Support/ZapretControl/proxy.pid` | pid локального прокси |
-| `~/Library/LaunchAgents/com.zapretcontrol.proxy.plist` | автозапуск |
-| `--split N` | точка разрыва ClientHello (`0` — середина SNI, по умолчанию) |
-| `--delay MS` | пауза между сегментами в мс (по умолчанию 0) |
+| `macos/bin/tpws` | Native DPI engine (built locally) |
+| `macos/lib/http-bridge.pl` | HTTP CONNECT bridge to local tpws SOCKS |
+| `macos/engine/tpws-src/` | tpws sources (zapret) |
+| `macos/engine/build.sh` | Engine build script (`make mac`) |
+| `~/Library/Application Support/ZapretControl/proxy.conf` | Saved mode/service/ports/desync |
+| `~/Library/Application Support/ZapretControl/proxy.log` | Engine/bridge log |
+| `~/Library/LaunchAgents/com.zapretcontrol.proxy.plist` | Autostart |
 
-Локальные адреса (`localhost`, `192.168.*`, `10.*`, `172.16-31.*`, `*.local`)
-всегда идут напрямую (bypass).
+## Limitations
 
-## Зависимости
+- `tpws` is a **stream-level** local proxy engine (not packet-level WinDivert/NFQUEUE). Effectiveness depends on DPI behavior and chosen desync profile.
+- QUIC/HTTP3 (UDP/443) is not handled by TCP proxying; disable QUIC in browser or rely on TCP fallback where possible.
+- System proxy settings apply to apps that honor macOS proxy settings.
+- You may need to allow local networking prompts and grant admin rights to modify network proxy settings.
 
-- macOS с `networksetup` (штатно).
-- `/usr/bin/perl` — входит в macOS (используется локальным прокси).
-- `curl` — входит в macOS (используется для `--test`).
+## CI / tests
 
-Дополнительных пакетов, Python или Homebrew не требуется.
-
-## Ограничения
-
-- Локальный режим использует split TLS ClientHello. Это эффективно против
-  части DPI, но не универсально: при другом типе блокировки может помочь только
-  LAN-режим с zapret/`winws` на Windows.
-- Системный прокси читают не все приложения (игры, часть CLI, приложения с
-  собственным сетевым стеком). Для них нужна ручная настройка HTTP/SOCKS5
-  внутри приложения.
-- QUIC/HTTP3 (UDP 443) системный HTTP/SOCKS-прокси может не перехватывать;
-  браузеры при неудаче обычно откатываются на TCP/TLS.
-- Реальная эффективность зависит от провайдера и DPI; при необходимости
-  попробуйте параметры `--split`/`--delay` или LAN-режим.
-
-## Проверка без Mac
-
-```bash
-cd macos/tests
-./run-tests.sh          # 21 сценарий, 91 проверка
-```
-
-Эмулятор использует заглушки `uname`, `id`, `sudo`, `networksetup`, `dscl`,
-`stat`, `curl`, `perl` и `launchctl`; системные настройки не меняются.
-Проверяются: справка, версия, LAN-включение, статус, `--test`, другое
-подключение, ошибки адреса, меню, локальный режим, остановка, установка,
-автозапуск, удаление, `--doctor`, `--logs`, `--restart`, пользовательские порты
-и `desync-proxy.pl --selftest`. Реальный `networksetup`, LaunchAgent и сеть
-проверяются только на Mac.
+GitHub Actions workflow `.github/workflows/test-macos.yml` builds the native `tpws` engine on macOS runners, runs syntax/self-tests, and executes `macos/tests/run-tests.sh`.

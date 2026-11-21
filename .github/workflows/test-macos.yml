@@ -25,10 +25,13 @@ jobs:
           uname -a
           perl -v | head -n 2 || true
           bash --version | head -n 1 || true
+          make --version | head -n 1 || true
+          cc --version | head -n 1 || true
 
       - name: Syntax checks (bash)
         run: |
           bash -n macos/zapret-proxy.command
+          bash -n macos/engine/build.sh
           bash -n macos/tests/run-tests.sh
           bash -n macos/tests/stubs/curl
           bash -n macos/tests/stubs/dscl
@@ -38,15 +41,25 @@ jobs:
           bash -n macos/tests/stubs/perl
           bash -n macos/tests/stubs/stat
           bash -n macos/tests/stubs/sudo
+          bash -n macos/tests/stubs/tpws
           bash -n macos/tests/stubs/uname
+          bash -n 'macos/ZapretControl.app/Contents/MacOS/ZapretControl'
 
-      - name: Syntax and self-test (Perl proxy)
+      - name: Syntax and self-test (Perl HTTP bridge)
         run: |
-          perl -c macos/lib/desync-proxy.pl
-          perl macos/lib/desync-proxy.pl --selftest
+          perl -c macos/lib/http-bridge.pl
+          perl macos/lib/http-bridge.pl --selftest
+
+      - name: Build native tpws engine
+        run: |
+          chmod +x macos/engine/build.sh
+          bash macos/engine/build.sh
+          test -x macos/engine/bin/tpws
+          test -x macos/bin/tpws
+          file macos/bin/tpws || true
 
       - name: Run macOS client emulator
         run: |
-          chmod +x macos/tests/run-tests.sh macos/zapret-proxy.command macos/tests/stubs/* || true
+          chmod +x macos/tests/run-tests.sh macos/zapret-proxy.command macos/tests/stubs/* macos/lib/http-bridge.pl 'macos/ZapretControl.app/Contents/MacOS/ZapretControl' || true
           cd macos/tests
           bash run-tests.sh

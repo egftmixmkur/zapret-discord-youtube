@@ -430,7 +430,8 @@ $dpiTargets = @()
 # Config
 $targetDir = $rootDir
 if (-not $targetDir) { $targetDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
-$allBatFiles = Get-ChildItem -Path $targetDir -Filter "general*.bat" |
+$allBatFiles = Get-ChildItem -Path $targetDir -Filter "general*.bat" -File |
+    Where-Object { $_.Name -notmatch '\.(bak|old|tmp)$' } |
     Sort-Object { [Regex]::Replace($_.Name, "(\d+)", { $args[0].Value.PadLeft(8, "0") }) }
 $batFiles = @($allBatFiles)
 

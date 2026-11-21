@@ -1,345 +1,143 @@
 #!/bin/bash
-# ZAPRET CONTROL — графическая оболочка для macOS (osascript/AppleScript).
-# Обёртка над zapret-proxy.command: показывает диалоги и вызывает CLI.
+# ZAPRET CONTROL - macOS GUI wrapper (osascript/AppleScript) for zapret-proxy.command
 set -u
 
 APP_NAME="ZAPRET CONTROL"
-APP_VERSION="0.4.0"
+APP_VERSION="0.5.0"
 
 SELF_DIR=$(cd "$(dirname "$0")" && pwd)
 RES_DIR="$SELF_DIR/../Resources"
 CLI="$RES_DIR/zapret-proxy.command"
+[ -f "$CLI" ] || CLI="$SELF_DIR/../../zapret-proxy.command"
 
 if [ ! -f "$CLI" ]; then
-    osascript -e 'display dialog "Не найден zapret-proxy.command в ресурсах приложения." buttons {"OK"} default button "OK" with icon stop with title "ZAPRET CONTROL"' >/dev/null 2>&1
-    exit 1
+  osascript -e 'display dialog "zapret-proxy.command not found inside the app bundle." buttons {"OK"} default button "OK" with icon stop with title "ZAPRET CONTROL"' >/dev/null 2>&1
+  exit 1
 fi
 
-# ---- helpers ----
+as_quote() { local s="${1:-}"; s=${s//\\/\\\\}; s=${s//\"/\\\"}; printf '%s' "$s"; }
+sh_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
-# Экранирование для строки в AppleScript: \ и "
-as_quote() {
-    local s="${1:-}"
-    s=${s//\\/\\\\}
-    s=${s//\"/\\\"}
-    printf '%s' "$s"
-}
+show_info() { local m=$(as_quote "${1:-}") t=$(as_quote "${2:-$APP_NAME}"); osascript -e "display dialog \"$m\" buttons {\"OK\"} default button \"OK\" with title \"$t\"" >/dev/null 2>&1 || true; }
+show_error() { local m=$(as_quote "${1:-}"); osascript -e "display dialog \"$m\" buttons {\"OK\"} default button \"OK\" with icon stop with title \"$APP_NAME\"" >/dev/null 2>&1 || true; }
 
-# Экранирование для одинарных кавычек в shell-команде внутри do shell script
-sh_quote() {
-    printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
-}
-
-show_info() {
-    local msg title
-    msg=$(as_quote "${1:-}")
-    title=$(as_quote "${2:-$APP_NAME}")
-    osascript -e "display dialog \"$msg\" buttons {\"OK\"} default button \"OK\" with title \"$title\"" >/dev/null 2>&1 || true
-}
-
-show_error() {
-    local msg
-    msg=$(as_quote "${1:-}")
-    osascript -e "display dialog \"$msg\" buttons {\"OK\"} default button \"OK\" with icon stop with title \"$APP_NAME\"" >/dev/null 2>&1 || true
-}
-
-# Показать длинный текст: записать во временный файл и открыть в TextEdit
 show_text_file() {
-    local text="$1" title="${2:-$APP_NAME}"
-    local tmp
-    tmp=$(mktemp "${TMPDIR:-/tmp}/zapret-XXXXXX.txt" 2>/dev/null) || tmp="/tmp/zapret-output.txt"
-    printf '%s\n' "--- $title ---" >"$tmp"
-    printf '%s\n' "$text" >>"$tmp"
-    open -t "$tmp" >/dev/null 2>&1 || show_info "$text" "$title"
+  local text="$1" title="${2:-$APP_NAME}" tmp
+  tmp=$(mktemp "${TMPDIR:-/tmp}/zapret-XXXXXX.txt" 2>/dev/null) || tmp="/tmp/zapret-output.txt"
+  printf '%s\n' "--- $title ---" >"$tmp"; printf '%s\n' "$text" >>"$tmp"
+  open -t "$tmp" >/dev/null 2>&1 || show_info "$text" "$title"
 }
 
-# Выполнить CLI без прав администратора
-run_cli() {
-    /bin/bash "$CLI" "$@" 2>&1
-}
-
-# Выполнить CLI с правами администратора (графический запрос пароля macOS)
 run_cli_admin() {
-    local cmd arg args
-    cmd="/bin/bash $(sh_quote "$CLI")"
-    for arg in "$@"; do
-        cmd="$cmd $(sh_quote "$arg")"
-    done
-    local as_cmd
-    as_cmd=$(as_quote "$cmd")
-    osascript -e "do shell script \"$as_cmd\" with administrator privileges" 2>&1
+  local cmd arg as_cmd
+  cmd="/bin/bash $(sh_quote "$CLI")"
+  for arg in "$@"; do cmd="$cmd $(sh_quote "$arg")"; done
+  as_cmd=$(as_quote "$cmd")
+  osascript -e "do shell script \"$as_cmd\" with administrator privileges" 2>&1
 }
+run_cli() { /bin/bash "$CLI" "$@" 2>&1; }
 
-# Быстрый статус (без sudo, через CLI-переменные/файлы где возможно)
-quick_status() {
-    local out
-    out=$(run_cli --status 2>&1) || true
-    # --status в CLI требует root (sudo), поэтому при ошибке пробуем с правами
-    if [ -z "$out" ] || echo "$out" | grep -q "Пароль администратора"; then
-        out=$(run_cli_admin --status 2>&1) || true
-    fi
-    printf '%s' "$out"
-}
-
-# Короткая сводка для меню
 status_summary() {
-    # Читаем конфиг напрямую без root
-    local mode="не задан" host="" service="Wi-Fi" http="8080" socks="1080" daemon="не запущен" auto="выключен"
-    local conf="$HOME/Library/Application Support/ZapretControl/proxy.conf"
-    local pidf="$HOME/Library/Application Support/ZapretControl/proxy.pid"
-    local plist="$HOME/Library/LaunchAgents/com.zapretcontrol.proxy.plist"
-    if [ -f "$conf" ]; then
-        while IFS='=' read -r k v; do
-            v=$(printf '%s' "$v" | tr -d '"')
-            case "$k" in
-                MODE) [ "$v" = "local" ] && mode="local" || mode="lan" ;;
-                HOST) host="$v" ;;
-                SERVICE) [ -n "$v" ] && service="$v" ;;
-                HTTP_PORT) [ -n "$v" ] && http="$v" ;;
-                SOCKS_PORT) [ -n "$v" ] && socks="$v" ;;
-            esac
-        done <"$conf"
-    fi
-    if [ -f "$pidf" ]; then
-        local pid
-        pid=$(head -n 1 "$pidf" 2>/dev/null | tr -dc '0-9')
-        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            daemon="работает (pid $pid)"
-        fi
-    fi
-    [ -f "$plist" ] && auto="включён"
-    if [ "$mode" = "local" ]; then
-        printf 'Режим: локальный (127.0.0.1)\nПрокси: %s\nАвтозапуск: %s\nПодключение: %s\nПорты: HTTP %s, SOCKS %s' "$daemon" "$auto" "$service" "$http" "$socks"
-    elif [ "$mode" = "lan" ] && [ -n "$host" ]; then
-        printf 'Режим: LAN (Windows-ПК %s)\nЛокальный прокси: %s\nАвтозапуск: %s\nПодключение: %s' "$host" "$daemon" "$auto" "$service"
-    else
-        printf 'Режим: не настроен\nЛокальный прокси: %s\nАвтозапуск: %s\nПодключение: %s' "$daemon" "$auto" "$service"
-    fi
+  local mode="unknown" host="" service="Wi-Fi" http="8080" socks="1080" engine="stopped" auto="disabled"
+  local conf="$HOME/Library/Application Support/ZapretControl/proxy.conf"
+  local pidf="$HOME/Library/Application Support/ZapretControl/proxy.pid"
+  local plist="$HOME/Library/LaunchAgents/com.zapretcontrol.proxy.plist"
+  if [ -f "$conf" ]; then
+    while IFS='=' read -r k v; do v=$(printf '%s' "$v" | sed 's/^"//; s/"$//'); case "$k" in MODE) mode="$v";; HOST) host="$v";; SERVICE) [ -n "$v" ] && service="$v";; HTTP_PORT) [ -n "$v" ] && http="$v";; SOCKS_PORT) [ -n "$v" ] && socks="$v";; esac; done <"$conf"
+  fi
+  if [ -f "$pidf" ]; then local p; p=$(tr -dc '0-9' <"$pidf" | head -n1); if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then engine="running (pid $p)"; fi; fi
+  [ -f "$plist" ] && auto="enabled"
+  if [ "$mode" = "local" ]; then printf 'Mode: local (native tpws)\nEngine: %s\nAutostart: %s\nService: %s\nPorts: HTTP %s, SOCKS %s' "$engine" "$auto" "$service" "$http" "$socks";
+  elif [ "$mode" = "lan" ] && [ -n "$host" ]; then printf 'Mode: LAN (Windows host %s)\nEngine: %s\nAutostart: %s\nService: %s' "$host" "$engine" "$auto" "$service";
+  else printf 'Mode: %s\nEngine: %s\nAutostart: %s\nService: %s' "$mode" "$engine" "$auto" "$service"; fi
 }
 
-ask_text() {
-    local prompt="$1" default="${2:-}" title="${3:-$APP_NAME}"
-    local p d t
-    p=$(as_quote "$prompt")
-    d=$(as_quote "$default")
-    t=$(as_quote "$title")
-    local result
-    result=$(osascript -e "display dialog \"$p\" default answer \"$d\" buttons {\"Отмена\",\"OK\"} default button \"OK\" with title \"$t\"" 2>&1) || return 1
-    # result: button returned:OK, text returned:VALUE
-    printf '%s' "$result" | sed -n 's/^.*text returned://p'
-}
+ask_text() { local p=$(as_quote "$1") d=$(as_quote "${2:-}") t=$(as_quote "${3:-$APP_NAME}") r; r=$(osascript -e "display dialog \"$p\" default answer \"$d\" buttons {\"Cancel\",\"OK\"} default button \"OK\" with title \"$t\"" 2>&1) || return 1; printf '%s' "$r" | sed -n 's/^.*text returned://p'; }
 
 choose_service() {
-    local services
-    services=$(/usr/sbin/networksetup -listallnetworkservices 2>/dev/null | tail -n +2 | sed 's/^\*//') || true
-    if [ -z "$services" ]; then
-        show_error "Не удалось получить список сетевых подключений."
-        return 1
-    fi
-    # Текущее из конфига
-    local current="Wi-Fi" conf="$HOME/Library/Application Support/ZapretControl/proxy.conf"
-    if [ -f "$conf" ]; then
-        local v
-        v=$(grep '^SERVICE=' "$conf" 2>/dev/null | head -n1 | sed 's/^SERVICE="//; s/"$//')
-        [ -n "$v" ] && current="$v"
-    fi
-    # Формируем список для AppleScript: {"Wi-Fi", "Ethernet", ...}
-    local items="" line first=1
-    while IFS= read -r line; do
-        [ -n "$line" ] || continue
-        line=$(printf '%s' "$line" | sed 's/\\/\\\\/g; s/"/\\"/g')
-        if [ $first -eq 1 ]; then items="\"$line\""; first=0; else items="$items, \"$line\""; fi
-    done <<EOF
+  local services cur conf v items line first r
+  services=$(/usr/sbin/networksetup -listallnetworkservices 2>/dev/null | tail -n +2 | sed 's/^\*//') || true
+  [ -n "$services" ] || { show_error "No network services found."; return 1; }
+  cur="Wi-Fi"; conf="$HOME/Library/Application Support/ZapretControl/proxy.conf"
+  if [ -f "$conf" ]; then v=$(grep '^SERVICE=' "$conf" 2>/dev/null | head -n1 | sed 's/^SERVICE="//; s/"$//'); [ -n "$v" ] && cur="$v"; fi
+  items=""; first=1
+  while IFS= read -r line; do [ -n "$line" ] || continue; line=$(printf '%s' "$line" | sed 's/\\/\\\\/g; s/"/\\"/g'); if [ $first -eq 1 ]; then items="\"$line\""; first=0; else items="$items, \"$line\""; fi; done <<EOF
 $services
 EOF
-    local cur
-    cur=$(as_quote "$current")
-    local result
-    result=$(osascript -e "choose from list {$items} with title \"$APP_NAME\" with prompt \"Выберите сетевое подключение:\" default items {\"$cur\"}" 2>&1) || return 1
-    [ "$result" = "false" ] && return 1
-    printf '%s' "$result"
+  r=$(osascript -e "choose from list {$items} with title \"$APP_NAME\" with prompt \"Select network service:\" default items {\"$(as_quote "$cur")\"}" 2>&1) || return 1
+  [ "$r" = "false" ] && return 1; printf '%s' "$r"
 }
 
-do_local_on() {
-    local out rc
-    out=$(run_cli_admin --local 2>&1); rc=$?
-    if [ $rc -eq 0 ]; then
-        show_info "Локальный режим включён (127.0.0.1).\n\n$out" "Готово"
-    else
-        show_error "Не удалось включить локальный режим (код $rc).\n\n$out"
-    fi
-}
-
-do_lan_on() {
-    local host
-    host=$(ask_text "IP или имя Windows-ПК (где запущен zapret/прокси):" "" "LAN-режим") || return 0
-    [ -n "$host" ] || return 0
-    local out rc
-    out=$(run_cli_admin --on "$host" 2>&1); rc=$?
-    if [ $rc -eq 0 ]; then
-        show_info "LAN-режим включён: $host\n\n$out" "Готово"
-    else
-        show_error "Не удалось включить LAN-режим (код $rc).\n\n$out"
-    fi
-}
-
-do_off() {
-    local out rc
-    out=$(run_cli_admin --off 2>&1); rc=$?
-    if [ $rc -eq 0 ]; then
-        show_info "Прокси выключен.\n\n$out" "Готово"
-    else
-        show_error "Не удалось выключить прокси (код $rc).\n\n$out"
-    fi
-}
-
-do_restart() {
-    local out rc
-    out=$(run_cli_admin --restart 2>&1); rc=$?
-    if [ $rc -eq 0 ]; then
-        show_info "Текущий режим перезапущен.\n\n$out" "Готово"
-    else
-        show_error "Не удалось перезапустить (код $rc).\n\n$out"
-    fi
-}
-
-do_test() {
-    # test в CLI эскалирует; запустим с правами для единообразия
-    local out rc
-    out=$(run_cli_admin --test 2>&1); rc=$?
-    if [ $rc -eq 0 ]; then
-        show_info "Проверка пройдена.\n\n$out" "Проверка связи"
-    else
-        show_error "Проверка не пройдена (код $rc).\n\n$out"
-    fi
-}
-
-do_status() {
-    local out
-    out=$(run_cli_admin --status 2>&1) || true
-    show_text_file "$out" "Статус"
-}
-
-do_doctor() {
-    local out
-    out=$(run_cli --doctor 2>&1) || true
-    show_text_file "$out" "Диагностика"
-}
-
-do_logs() {
-    local out
-    out=$(run_cli --logs 80 2>&1) || true
-    show_text_file "$out" "Журнал"
-}
+do_local_on() { local out rc; out=$(run_cli_admin --local 2>&1); rc=$?; if [ $rc -eq 0 ]; then show_info "Local native tpws mode enabled (127.0.0.1).\n\n$out"; else show_error "Failed to enable local mode ($rc).\n\n$out"; fi; }
+do_lan_on() { local host out rc; host=$(ask_text "Windows host IP (running zapret/proxy):" "" "LAN mode") || return 0; [ -n "$host" ] || return 0; out=$(run_cli_admin --on "$host" 2>&1); rc=$?; if [ $rc -eq 0 ]; then show_info "LAN mode enabled: $host\n\n$out"; else show_error "Failed to enable LAN mode ($rc).\n\n$out"; fi; }
+do_off() { local out rc; out=$(run_cli_admin --off 2>&1); rc=$?; if [ $rc -eq 0 ]; then show_info "Proxy disabled.\n\n$out"; else show_error "Failed to disable proxy ($rc).\n\n$out"; fi; }
+do_restart() { local out rc; out=$(run_cli_admin --restart 2>&1); rc=$?; if [ $rc -eq 0 ]; then show_info "Restarted.\n\n$out"; else show_error "Restart failed ($rc).\n\n$out"; fi; }
+do_status() { local out; out=$(run_cli_admin --status 2>&1) || true; show_text_file "$out" "Status"; }
+do_test() { local out rc; out=$(run_cli_admin --test 2>&1); rc=$?; if [ $rc -eq 0 ]; then show_info "Test passed.\n\n$out" "Connection test"; else show_error "Test failed ($rc).\n\n$out"; fi; }
+do_doctor() { local out; out=$(run_cli --doctor 2>&1) || true; show_text_file "$out" "Doctor"; }
+do_logs() { local out; out=$(run_cli --logs 80 2>&1) || true; show_text_file "$out" "Logs"; }
 
 do_service() {
-    local svc
-    svc=$(choose_service) || return 0
-    [ -n "$svc" ] || return 0
-    # Сохраним выбор в конфиг без root (через CLI? CLI --service только модификатор)
-    # Обновим конфиг напрямую
-    local conf_dir="$HOME/Library/Application Support/ZapretControl"
-    local conf="$conf_dir/proxy.conf"
-    mkdir -p "$conf_dir" 2>/dev/null || true
-    if [ -f "$conf" ]; then
-        if grep -q '^SERVICE=' "$conf" 2>/dev/null; then
-            local tmp="$conf.tmp.$$"
-            sed "s|^SERVICE=.*|SERVICE=\"$svc\"|" "$conf" >"$tmp" && mv "$tmp" "$conf"
-        else
-            echo "SERVICE=\"$svc\"" >>"$conf"
-        fi
-    else
-        # минимальный конфиг
-        {
-            echo 'MODE="lan"'
-            echo 'HOST=""'
-            echo "SERVICE=\"$svc\""
-            echo 'HTTP_PORT="8080"'
-            echo 'SOCKS_PORT="1080"'
-            echo 'SPLIT="0"'
-            echo 'DELAY="0"'
-        } >"$conf"
-    fi
-    show_info "Выбрано подключение: $svc\n\nЧтобы применить, перезапустите текущий режим (или включите прокси заново)." "Сетевое подключение"
+  local svc conf_dir conf tmp
+  svc=$(choose_service) || return 0; [ -n "$svc" ] || return 0
+  conf_dir="$HOME/Library/Application Support/ZapretControl"; conf="$conf_dir/proxy.conf"; mkdir -p "$conf_dir" 2>/dev/null || true
+  if [ -f "$conf" ]; then
+    if grep -q '^SERVICE=' "$conf" 2>/dev/null; then tmp="$conf.tmp.$$"; sed "s|^SERVICE=.*|SERVICE=\"$svc\"|" "$conf" >"$tmp" && mv "$tmp" "$conf"; else echo "SERVICE=\"$svc\"" >>"$conf"; fi
+  else
+    { echo 'MODE="local"'; echo 'HOST=""'; echo "SERVICE=\"$svc\""; echo 'HTTP_PORT="8080"'; echo 'SOCKS_PORT="1080"'; echo 'DESYNC_ARGS="--split-pos=1,midsld --disorder --tlsrec=midsld+1"'; } >"$conf"
+  fi
+  show_info "Service set to: $svc\n\nRestart current mode to apply if proxy is active."
 }
 
 do_autostart() {
-    local plist="$HOME/Library/LaunchAgents/com.zapretcontrol.proxy.plist"
-    local prompt action
-    if [ -f "$plist" ]; then
-        prompt="Автозапуск сейчас включён. Выключить?"
-        action="off"
-    else
-        prompt="Автозапуск сейчас выключен. Включить? (требуется установленный клиент и локальный режим)"
-        action="on"
-    fi
-    local p; p=$(as_quote "$prompt")
-    local res
-    res=$(osascript -e "display dialog \"$p\" buttons {\"Отмена\",\"Да\"} default button \"Да\" with title \"$APP_NAME\"" 2>&1) || return 0
-    local out rc
-    out=$(run_cli --autostart "$action" 2>&1); rc=$?
-    if [ $rc -eq 0 ]; then
-        show_info "$out" "Автозапуск"
-    else
-        show_error "Не удалось изменить автозапуск (код $rc).\n\n$out"
-    fi
+  local plist="$HOME/Library/LaunchAgents/com.zapretcontrol.proxy.plist" prompt action res out rc p
+  if [ -f "$plist" ]; then prompt="Autostart is enabled. Disable it?"; action="off"; else prompt="Autostart is disabled. Enable it? (local mode, installed client recommended)"; action="on"; fi
+  p=$(as_quote "$prompt"); res=$(osascript -e "display dialog \"$p\" buttons {\"Cancel\",\"OK\"} default button \"OK\" with title \"$APP_NAME\"" 2>&1) || return 0
+  out=$(run_cli --autostart "$action" 2>&1); rc=$?; if [ $rc -eq 0 ]; then show_info "$out"; else show_error "Autostart change failed ($rc).\n\n$out"; fi
 }
 
-do_install() {
-    local out rc
-    out=$(run_cli --install 2>&1); rc=$?
-    if [ $rc -eq 0 ]; then
-        show_info "$out" "Установка"
-    else
-        show_error "Не удалось установить клиент (код $rc).\n\n$out"
-    fi
-}
+do_install() { local out rc; out=$(run_cli --install 2>&1); rc=$?; if [ $rc -eq 0 ]; then show_info "$out"; else show_error "Install failed ($rc).\n\n$out"; fi; }
+do_build_engine() { local out rc; out=$(run_cli_admin --build-engine 2>&1); rc=$?; if [ $rc -eq 0 ]; then show_info "$out"; else show_error "Engine build failed ($rc).\n\n$out"; fi; }
 
 do_more() {
-    local choice
-    choice=$(osascript -e 'choose from list {"Статус (подробно)", "Проверить связь", "Диагностика", "Журнал", "Сетевое подключение", "Автозапуск вкл/выкл", "Установить клиент в ~/Applications"} with title "ZAPRET CONTROL" with prompt "Дополнительные действия:" default items {"Статус (подробно)"}' 2>&1) || return 0
-    [ "$choice" = "false" ] && return 0
-    case "$choice" in
-        "Статус (подробно)") do_status ;;
-        "Проверить связь") do_test ;;
-        "Диагностика") do_doctor ;;
-        "Журнал") do_logs ;;
-        "Сетевое подключение") do_service ;;
-        "Автозапуск вкл/выкл") do_autostart ;;
-        "Установить клиент в ~/Applications") do_install ;;
-    esac
+  local choice
+  choice=$(osascript -e 'choose from list {"Status (detailed)", "Test connection", "Doctor", "Logs", "Select network service", "Build native engine", "Autostart on/off", "Install to ~/Applications"} with title "ZAPRET CONTROL" with prompt "More actions:" default items {"Status (detailed)"}' 2>&1) || return 0
+  [ "$choice" = "false" ] && return 0
+  case "$choice" in
+    "Status (detailed)") do_status ;;
+    "Test connection") do_test ;;
+    "Doctor") do_doctor ;;
+    "Logs") do_logs ;;
+    "Select network service") do_service ;;
+    "Build native engine") do_build_engine ;;
+    "Autostart on/off") do_autostart ;;
+    "Install to ~/Applications") do_install ;;
+  esac
 }
 
-# ---- main loop ----
-
 while true; do
-    summary=$(status_summary)
-    msg=$(as_quote "ZAPRET CONTROL $APP_VERSION — macOS
+  summary=$(status_summary)
+  msg=$(as_quote "ZAPRET CONTROL $APP_VERSION
 
 $summary
 
-Выберите действие:")
-    result=$(osascript <<APPLESCRIPT 2>&1
-display dialog "$msg" buttons {"Выход", "Ещё…", "Локальный"} default button "Локальный" with title "$APP_NAME"
+Choose an action:")
+  result=$(osascript <<APPLESCRIPT 2>&1
+display dialog "$msg" buttons {"Quit", "More", "Local"} default button "Local" with title "$APP_NAME"
 APPLESCRIPT
 ) || exit 0
-
-    # result: button returned:Локальный  (or others)
-    case "$result" in
-        *"Выход"*) exit 0 ;;
-        *"Локальный"*)
-            # Подменю быстрого выбора основного действия
-            action=$(osascript -e 'choose from list {"Включить локальный режим (без Windows)", "Включить LAN-режим (Windows-ПК)", "Выключить прокси", "Перезапустить текущий режим"} with title "ZAPRET CONTROL" with prompt "Основное действие:" default items {"Включить локальный режим (без Windows)"}' 2>&1) || true
-            [ "$action" = "false" ] && continue
-            case "$action" in
-                "Включить локальный режим"*) do_local_on ;;
-                "Включить LAN-режим"*) do_lan_on ;;
-                "Выключить прокси"*) do_off ;;
-                "Перезапустить"*) do_restart ;;
-            esac
-            ;;
-        *"Ещё"*)
-            do_more
-            ;;
-    esac
+  case "$result" in
+    *"Quit"*) exit 0 ;;
+    *"Local"*)
+      action=$(osascript -e 'choose from list {"Enable local mode (native tpws)", "Enable LAN mode (Windows host)", "Disable proxy", "Restart current mode"} with title "ZAPRET CONTROL" with prompt "Action:" default items {"Enable local mode (native tpws)"}' 2>&1) || true
+      [ "$action" = "false" ] && continue
+      case "$action" in
+        "Enable local mode (native tpws)") do_local_on ;;
+        "Enable LAN mode (Windows host)") do_lan_on ;;
+        "Disable proxy") do_off ;;
+        "Restart current mode") do_restart ;;
+      esac
+      ;;
+    *"More"*) do_more ;;
+  esac
 done

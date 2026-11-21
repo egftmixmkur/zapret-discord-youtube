@@ -1,0 +1,25 @@
+#!/bin/bash
+# Test stub for native tpws engine.
+echo "tpws $*" >>"${SIM_LOG:-/dev/null}"
+pidfile=""
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "--pidfile" ]; then pidfile="$a"; prev=""; continue; fi
+  case "$a" in
+    --pidfile) prev="--pidfile" ;;
+    --pidfile=*) pidfile="${a#--pidfile=}" ;;
+  esac
+  prev="$a"
+done
+# Emulate background-capable daemon: fork so CLI's nohup+& and pid checks behave consistently.
+if [ "${SIM_TPWS_FORKED:-0}" != "1" ]; then
+  export SIM_TPWS_FORKED=1
+  nohup "$0" "$@" >/dev/null 2>&1 &
+  exit 0
+fi
+if [ -n "$pidfile" ]; then
+  mkdir -p "$(dirname "$pidfile")" 2>/dev/null || true
+  echo $$ >"$pidfile"
+fi
+trap 'rm -f "$pidfile"; exit 0' TERM INT
+while :; do sleep 1; done

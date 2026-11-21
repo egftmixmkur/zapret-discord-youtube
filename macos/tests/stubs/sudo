@@ -1,11 +1,35 @@
 #!/bin/bash
-# Заглушка sudo: пишет вызов в лог и перезапускает команду с SIM_UID=0.
+# Test stub for sudo: logs call and re-executes command.
+# Handles -p prompt, -u user, -n/-H/-E/-- and re-exec of scripts or arbitrary commands.
 if [ -n "${SIM_LOG:-}" ]; then
-    echo "sudo $*" >>"$SIM_LOG"
+    echo "sudo $*" >>"${SIM_LOG}"
 fi
-if [ "${1:-}" = "-p" ]; then
-    shift 2
-fi
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -p)
+            shift 2 ;;
+        -u)
+            export SUDO_USER="${2:-${SIM_USER:-sdccd}}"
+            shift 2 ;;
+        -n|-H|-E|-k|--preserve-env)
+            shift ;;
+        --)
+            shift; break ;;
+        -*)
+            shift ;;
+        *)
+            break ;;
+    esac
+done
 export SIM_UID=0
-export SUDO_USER="${SIM_USER:-sdccd}"
-exec bash "$@"
+export SUDO_USER="${SUDO_USER:-${SIM_USER:-sdccd}}"
+
+if [ $# -ge 1 ]; then
+    case "$1" in
+        *.command|*.sh)
+            exec bash "$@" ;;
+        bash)
+            exec "$@" ;;
+    esac
+fi
+exec "$@"

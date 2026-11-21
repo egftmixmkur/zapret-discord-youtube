@@ -31,7 +31,7 @@ $script:ListsDir   = Join-Path $script:RootDir 'lists'
 $script:BindDir    = Join-Path $script:RootDir 'bin'
 $script:MacDir     = Join-Path $script:RootDir 'macos'
 $script:MacClientScript = Join-Path $script:MacDir 'zapret-proxy.command'
-$script:AppVersion = '1.12.14'
+$script:AppVersion = '1.12.15'
 $script:UpdateRepo = 'egftmixmkur/zapret-discord-youtube'
 $script:StrategyFile = Join-Path $script:ProxyDir 'zapret-strategy.txt'
 $script:TestScript = Join-Path $script:UtilsDir 'test zapret.ps1'
@@ -885,6 +885,54 @@ function Start-TestRun([string]$type, [switch]$Interactive) {
     }
     $script:TestStatusLabel.Text = 'Тесты запущены в отдельном окне PowerShell...'
 }
+
+
+function Sync-OnlineStrategies([string]$Source = 'Flowseal', [switch]$Remove) {
+    $scriptPath = Join-Path $script:UtilsDir 'sync-online-strategies.ps1'
+    if (-not (Test-Path -LiteralPath $scriptPath)) {
+        [Windows.Forms.MessageBox]::Show("Скрипт не найден: $scriptPath", 'Онлайн-стратегии', 'OK', 'Warning') | Out-Null
+        return
+    }
+    $prevCursor = $script:Form.Cursor
+    try {
+        $script:Form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        $script:StatusLabel.Text = if ($Remove) { "Удаление скачанных стратегий ($Source)..." } else { "Загрузка стратегий из интернета ($Source)..." }
+        [System.Windows.Forms.Application]::DoEvents()
+        $ps = (Get-Command powershell.exe -ErrorAction SilentlyContinue).Source
+        if (-not $ps) { $ps = 'powershell.exe' }
+        $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$scriptPath`"", '-Source', $Source, '-TargetDir', "`"$script:RootDir`"")
+        if ($Remove) { $argList += '-Remove' }
+        $out = & $ps @argList 2>&1
+        $code = $LASTEXITCODE
+        $text = (($out | ForEach-Object { [string]$_ }) -join "`r`n").Trim()
+        try { Update-StrategyList } catch { }
+        try { Update-Status } catch { }
+        if ($code -ne 0) {
+            $msg = if ($text) { $text } else { "Код ошибки: $code" }
+            [Windows.Forms.MessageBox]::Show("Не удалось выполнить синхронизацию стратегий.`r`n`r`n$msg", 'Онлайн-стратегии', 'OK', 'Warning') | Out-Null
+            $script:StatusLabel.Text = 'Ошибка загрузки онлайн-стратегий'
+            return
+        }
+        $downloaded = 0; $failed = 0; $removed = 0
+        if ($text -match 'DOWNLOADED=(\d+)') { $downloaded = [int]$matches[1] }
+        if ($text -match 'FAILED=(\d+)') { $failed = [int]$matches[1] }
+        if ($text -match 'REMOVED=(\d+)') { $removed = [int]$matches[1] }
+        if ($Remove) {
+            [Windows.Forms.MessageBox]::Show("Удалено скачанных стратегий ($Source): $removed", 'Онлайн-стратегии', 'OK', 'Information') | Out-Null
+            $script:StatusLabel.Text = "Онлайн-стратегии удалены: $removed"
+        } else {
+            $extra = if ($failed -gt 0) { "`r`nНе удалось скачать: $failed" } else { '' }
+            [Windows.Forms.MessageBox]::Show("Загружено стратегий ($Source): $downloaded$extra`r`n`r`nНовые стратегии добавлены в список и будут участвовать в авто-подборе.", 'Онлайн-стратегии', 'OK', 'Information') | Out-Null
+            $script:StatusLabel.Text = "Онлайн-стратегии загружены: $downloaded"
+        }
+    } catch {
+        [Windows.Forms.MessageBox]::Show("Ошибка синхронизации стратегий:`r`n$($_.Exception.Message)", 'Онлайн-стратегии', 'OK', 'Error') | Out-Null
+        $script:StatusLabel.Text = 'Ошибка синхронизации онлайн-стратегий'
+    } finally {
+        try { $script:Form.Cursor = $prevCursor } catch { $script:Form.Cursor = [System.Windows.Forms.Cursors]::Default }
+    }
+}
+
 
 function Start-AutoSelect([switch]$Fast) {
     if (-not (Test-Preflight)) { return }
@@ -2612,6 +2660,10 @@ $ts.Controls.Add($tsTop)
     -Back $script:Theme.Surface3 -OnClick { Apply-BestFromResult })
 [void](New-UIButton -Parent $tsTop -Text 'Остановить тесты' -X 0 -Y 0 -W 180 -H 40 `
     -Back $script:Theme.Red -OnClick { Stop-TestRun })
+[void](New-UIButton -Parent $tsTop -Text 'Скачать стратегии (интернет)' -X 0 -Y 0 -W 230 -H 40 `
+    -Back $script:Theme.Blue -OnClick { Sync-OnlineStrategies -Source 'Flowseal' })
+[void](New-UIButton -Parent $tsTop -Text 'Удалить онлайн-стратегии' -X 0 -Y 0 -W 210 -H 40 `
+    -Back $script:Theme.Surface3 -OnClick { Sync-OnlineStrategies -Source 'Flowseal' -Remove })
 
 $tsResultCard = New-UICard -Parent $ts -X 14 -Y 150 -W 850 -H 400
 $tsResultCard.Dock = [System.Windows.Forms.DockStyle]::Fill
@@ -3045,7 +3097,7 @@ function Run-Diagnostics {
     $script:DiagBox.Clear()
     Add-Diag '=== ДИАГНОСТИКА ZAPRET CONTROL ===' $script:Theme.Cyan
     Add-Diag "Время: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-    Add-Diag "GUI: 1.12.14 (Windows), прокси: $($script:ProxyDir)"
+    Add-Diag "GUI: 1.12.15 (Windows), прокси: $($script:ProxyDir)"
     Add-Diag ''
     $ok = $script:Theme.Green
     $bad = $script:Theme.Red
@@ -3082,6 +3134,26 @@ function Run-Diagnostics {
     $service = Get-Service -Name 'zapret' -ErrorAction SilentlyContinue
     if ($service) { Add-Diag "[!] Служба zapret: $($service.Status)" $warn }
     else { Add-Diag '[OK] Служба zapret не установлена (standalone режим)' $ok }
+
+    $winwsPath = Join-Path $script:BindDir 'winws.exe'
+    if (Test-Path -LiteralPath $winwsPath) {
+        $wi = Get-Item -LiteralPath $winwsPath -ErrorAction SilentlyContinue
+        if ($wi) { Add-Diag "[OK] Движок winws.exe: $($wi.Length) байт, $($wi.LastWriteTime.ToString('yyyy-MM-dd HH:mm'))" $ok }
+        $wver = ''
+        try {
+            $wverOut = & cmd.exe /c "`"$winwsPath`" -V 2>&1"
+            if ($wverOut) { $wver = (($wverOut | ForEach-Object { [string]$_ }) -join ' ').Trim() }
+        } catch { $wver = '' }
+        if ($wver) { Add-Diag "[i] winws -V: $wver" $script:Theme.Muted }
+        foreach ($dep in @('cygwin1.dll','cygz.dll','WinDivert.dll','WinDivert64.sys')) {
+            $dp = Join-Path $script:BindDir $dep
+            if (Test-Path -LiteralPath $dp) { Add-Diag "[OK] Зависимость: $dep" $ok }
+            else { Add-Diag "[!] Отсутствует зависимость: $dep" $warn }
+        }
+    } else {
+        Add-Diag '[X] Движок winws.exe не найден в bin\' $bad
+    }
+
 
     $http = Get-PortOpen 8080
     $socks = Get-PortOpen 1080

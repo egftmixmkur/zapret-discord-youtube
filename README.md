@@ -12,7 +12,7 @@
 ```
 
 **[Скачать для Windows (ZapretControlSetup.exe)](https://github.com/egftmixmkur/zapret-discord-youtube/releases/latest)** — Windows 10/11 x64, права администратора.
-**[Скачать для macOS (ZapretControl.app / CLI, 0.4.0)](https://github.com/egftmixmkur/zapret-discord-youtube/releases/tag/macos-v0.4.0)** — отдельный релиз `macos-v0.4.0`.
+**macOS (ZapretControl, 0.5.0):** standalone-клиент в папке [`macos/`](macos/README.md) (нативный `tpws` + HTTP bridge, GUI wrapper и CLI). Сборка движка выполняется на macOS (`./engine/build.sh`).
 
 ## Что внутри
 
@@ -25,7 +25,7 @@
 | `proxy\ZapretControl.exe` | собранная панель управления (UAC при запуске) |
 | `proxy\ZapretControlSetup.exe` | установщик «всё в одном» для Windows (внутри весь пакет) |
 | `utils\test zapret.ps1` | тесты стратегий и `-AutoApply` для автоподбора |
-| `macos\` | клиент для macOS (0.4.0): GUI (`ZapretControl.app`) и CLI, локальный обход DPI, установка/автозапуск, диагностика или LAN-режим (отдельный релиз) |
+| `macos\` | клиент для macOS (0.5.0): standalone `tpws` engine + HTTP bridge, `ZapretControl.app` (GUI) и CLI, автозапуск/диагностика, режим LAN через Windows-хост |
 
 ## Возможности ZAPRET CONTROL (Windows)
 
@@ -43,7 +43,7 @@
    подсетей и запустит прокси + zapret.
 2. Либо скачай `proxy\ZapretControlSetup.exe` и поставь как обычную программу
    (папка установки, ярлыки, автозапуск, удаление через «Программы и
-   компоненты»). Для macOS скачай отдельный релиз `macos-v0.4.0` (см. раздел macOS).
+   компоненты»). Для macOS скачай отдельный релиз `macos-v0.5.0` (см. раздел macOS).
 3. Настройки других устройств (адрес прокси в Wi-Fi) — на вкладке «Прокси»
    в ZAPRET CONTROL.
 
@@ -64,7 +64,7 @@ powershell -ExecutionPolicy Bypass -File proxy\build-installer.ps1
 
 ## macOS
 
-**Отдельный релиз:** [macos-v0.4.0](https://github.com/egftmixmkur/zapret-discord-youtube/releases/tag/macos-v0.4.0). Версии раздельные: Windows — `1.12.14`, macOS — `0.4.0`.
+**Отдельный релиз:** [macos-v0.5.0](https://github.com/egftmixmkur/zapret-discord-youtube/releases/tag/macos-v0.5.0). Версии раздельные: Windows — `1.12.15`, macOS — `0.4.0`.
 
 Сам zapret (`winws.exe` + WinDivert) работает только на Windows, поэтому
 оригинальный `winws` на Mac не запускается. В папке [`macos/`](macos/README.md)
@@ -77,8 +77,9 @@ Windows-ПК не нужен. Также есть LAN-режим через пр
 cd macos
 # GUI: откройте ZapretControl.app в Finder
 # CLI:
-chmod +x zapret-proxy.command
-./zapret-proxy.command --local          # локальный режим на этом Mac
+chmod +x zapret-proxy.command engine/build.sh
+./zapret-proxy.command --build-engine   # собрать tpws из macos/engine/tpws-src (Xcode CLT)
+./zapret-proxy.command --local          # standalone режим на этом Mac
 ./zapret-proxy.command --status         # статус, --doctor / --logs / --restart
 ./zapret-proxy.command --install        # установка в ~/Applications
 ./zapret-proxy.command --autostart on   # автозапуск (LaunchAgent)
@@ -97,7 +98,7 @@ chmod +x zapret-proxy.command
 
 ## Благодарности
 
-* [zapret](https://github.com/bol-van/zapret) — bol-van (обход DPI, `winws`).
+* [zapret](https://github.com/bol-van/zapret) — bol-van (обход DPI, `tpws`/nfq/ws).
 * Дистрибутив стратегий `zapret-discord-youtube` 1.10.4.
 * [ps2exe](https://github.com/MScholtes/PS2EXE) — сборка PowerShell в EXE.
 
